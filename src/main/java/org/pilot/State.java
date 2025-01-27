@@ -1,8 +1,15 @@
 package org.pilot;
 
+import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.*;
+
+import static org.pilot.Constants.SHADOW_DIR;
 
 public class State {
     public static <T> T shallowCopy(T originalField, T dryRunField, boolean isSet){
@@ -33,9 +40,64 @@ public class State {
             return obj;
     }
 
-    public void handleFileChannel(FileChannel fileChannel) {
-        // do something with fileChannel
+    public FileChannel handleFileChannel(FileChannel fileChannel) {
+        try {
+            // Get original file path using reflection
+            String originalPath = extractPath(fileChannel);
+            if (originalPath == null) {
+                throw new IllegalStateException("Could not extract path from file channel");
+            }
+
+            // Create shadow path
+            Path originalFilePath = Paths.get(originalPath);
+            Path shadowPath = createShadowPath(originalFilePath);
+
+            // Create shadow directory if it doesn't exist
+            Files.createDirectories(shadowPath.getParent());
+
+            // Check if shadow file exists, if not, copy the original
+            if (!Files.exists(shadowPath)) {
+                Files.copy(originalFilePath, shadowPath);
+            }
+
+            // Open and store the shadow file channel
+            FileChannel shadowChannel = FileChannel.open(shadowPath,
+                    StandardOpenOption.READ,
+                    StandardOpenOption.WRITE);
+
+            // Store in our map for management
+            shadowChannels.put(shadowPath.toString(), shadowChannel);
+
+            return shadowChannel;
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to handle shadow file", e);
+        }
     }
+
+
+    private Path createShadowPath(Path originalPath) {
+        // Create shadow path maintaining the original directory structure
+        return Paths.get(originalPath.getRoot().toString(),
+                SHADOW_DIR,
+                originalPath.subpath(0, originalPath.getNameCount()).toString());
+    }
+
+    private String extractPath(FileChannel fileChannel) {
+        try {
+            for (Field field : fileChannel.getClass().getDeclaredFields()) {
+                if (field.getName().equals("path")) {
+                    field.setAccessible(true);
+                    return (String) field.get(fileChannel);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    //
 
     private static <E> Set<E> cloneSet(Set<E> original) {
         if (original == null) {
