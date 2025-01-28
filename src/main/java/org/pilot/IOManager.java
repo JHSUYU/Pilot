@@ -6,15 +6,43 @@ import java.nio.file.*;
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ShadowFileManager {
+public class IOManager {
     private static final String SHADOW_DIR = "shadow";
     // Store file channels to manage them
     private static final ConcurrentHashMap<String, FileChannel> shadowChannels = new ConcurrentHashMap<>();
 
+    private static final ConcurrentHashMap<String, FileOutputStream> shadowOutputStreams = new ConcurrentHashMap<>();
+
+    public FileOutputStream handleFileOutputStream(FileOutputStream fileOutputStream){
+        try{
+            String originalPath = extractPath4FileOutputStream(fileOutputStream);
+            if (originalPath == null) {
+                throw new IllegalStateException("Could not extract path from file channel");
+            }
+
+            Path originalFilePath = Paths.get(originalPath);
+            Path shadowPath = createShadowPath(originalFilePath);
+
+            if(shadowOutputStreams.containsKey(shadowPath.toString())){
+                return shadowOutputStreams.get(shadowPath.toString());
+            }
+
+            Files.createDirectories(shadowPath.getParent());
+
+            if (!Files.exists(shadowPath)) {
+                Files.copy(originalFilePath, shadowPath);
+            }
+
+            return getShadowFileOutputStream(shadowPath);
+        }catch (Exception e){
+            throw new RuntimeException("Failed to handle shadow file outputstream", e);
+        }
+    }
+
     public FileChannel handleFileChannel(FileChannel fileChannel) {
         try {
             // Get original file path using reflection
-            String originalPath = extractPath(fileChannel);
+            String originalPath = extractPath4FileChannel(fileChannel);
             if (originalPath == null) {
                 throw new IllegalStateException("Could not extract path from file channel");
             }
@@ -30,14 +58,15 @@ public class ShadowFileManager {
             if (!Files.exists(shadowPath)) {
                 Files.copy(originalFilePath, shadowPath);
             }
-            return getShadowFile(shadowPath);
+            return getShadowFileChannel(shadowPath);
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to handle shadow file", e);
+            e.printStackTrace();
+            throw new RuntimeException("Failed to handle shadow file channel", e);
         }
     }
 
-    private FileChannel getShadowFile(Path path){
+    private FileChannel getShadowFileChannel(Path path){
         if(shadowChannels.containsKey(path.toString())){
             return shadowChannels.get(path.toString());
         }
@@ -56,12 +85,43 @@ public class ShadowFileManager {
         return shadowChannel;
     }
 
-    private String extractPath(FileChannel fileChannel) {
+    private FileOutputStream getShadowFileOutputStream(Path path) {
+        if(shadowOutputStreams.containsKey(path.toString())){
+            return shadowOutputStreams.get(path.toString());
+        }
+
+        FileOutputStream shadowOutputStream = null;
+
+        try {
+            shadowOutputStream = new FileOutputStream(path.toFile(), true);  // true表示追加模式
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to open shadow file", e);
+        }
+
+        shadowOutputStreams.put(path.toString(), shadowOutputStream);
+        return shadowOutputStream;
+    }
+
+    private String extractPath4FileChannel(FileChannel fileChannel) {
         try {
             for (Field field : fileChannel.getClass().getDeclaredFields()) {
                 if (field.getName().equals("path")) {
                     field.setAccessible(true);
                     return (String) field.get(fileChannel);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private String extractPath4FileOutputStream(FileOutputStream outputStream) {
+        try {
+            for (Field field : outputStream.getClass().getDeclaredFields()) {
+                if (field.getName().equals("path")) {
+                    field.setAccessible(true);
+                    return (String) field.get(outputStream);
                 }
             }
         } catch (Exception e) {
