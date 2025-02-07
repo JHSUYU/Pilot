@@ -1,5 +1,7 @@
 package org.pilot.filesystem;
 
+import org.pilot.PilotUtil;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
@@ -7,8 +9,13 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.file.*;
+import java.util.Arrays;
 
-class ShadowFileChannel extends FileChannel {
+import static org.pilot.filesystem.ShadowFileSystem.fileEntries;
+import static org.pilot.filesystem.ShadowFileSystem.resolveShadowPath;
+
+public class ShadowFileChannel extends FileChannel {
     private final FileChannel delegate;
     @SuppressWarnings("unused")
     private final ShadowFileEntry entry;
@@ -103,5 +110,35 @@ class ShadowFileChannel extends FileChannel {
     @Override
     protected void implCloseChannel() throws IOException {
         delegate.close();
+    }
+
+    public static FileChannel open(Path originalPath, OpenOption... options) throws IOException {
+        if(!PilotUtil.isDryRun()){
+            return FileChannel.open(originalPath, options);
+        }
+        PilotUtil.dryRunLog("ShadowFileChannel.open"+originalPath.toString());
+        ShadowFileSystem.initializeFromOriginal();
+        Path absOriginal = originalPath.toAbsolutePath();
+
+        ShadowFileEntry entry = fileEntries.get(absOriginal);
+        if (entry == null) {
+            Path shadowPath = resolveShadowPath(absOriginal);
+            if (!Files.exists(shadowPath)) {
+                Files.createFile(shadowPath);
+            }
+            entry = new ShadowFileEntry(absOriginal, shadowPath);
+            fileEntries.put(absOriginal, entry);
+        }
+        if (!entry.isContentLoaded() && Files.exists(absOriginal) && Files.isRegularFile(absOriginal)) {
+            Files.copy(absOriginal, entry.getShadowPath(), StandardCopyOption.REPLACE_EXISTING);
+            entry.setContentLoaded(true);
+        }
+
+        OpenOption[] newOptions = Arrays.stream(options)
+                .filter(opt -> opt != StandardOpenOption.CREATE_NEW)
+                .toArray(OpenOption[]::new);
+
+        FileChannel fileChannel = FileChannel.open(entry.getShadowPath(), newOptions);
+        return fileChannel;
     }
 }

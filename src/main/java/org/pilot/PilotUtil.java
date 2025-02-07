@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.FutureTask;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +32,14 @@ public class PilotUtil
 
     public static final String SHOULD_RELEASE_LOCK_KEY = "should_release_lock";
     public static ContextKey<Boolean> IS_DRY_RUN = ContextKey.named("is_dry_run");
+
+    public static void dryRunLog(String message) {
+        if(!isDryRun()) {
+            dryRunLogger.info(message);
+        } else {
+            dryRunLogger.info(message + " in dry run mode");
+        }
+    }
 
     public static boolean isDryRun() {
         if(debug){
@@ -305,5 +315,11 @@ public class PilotUtil
         for(ExecutionUnit unit: array){
             System.out.println("Remaining unit: " + unit.methodSignature + " " + unit.unitId);
         }
+    }
+
+    public static boolean shouldBeContextWrap(Runnable runnable, Executor executor) {
+        dryRunLog("Checking if should be context wrapped");
+        dryRunLog("isDryRun is: " + isDryRun());
+        return true;
     }
 }

@@ -2,7 +2,7 @@ package org.pilot.filesystem;
 
 import java.nio.file.Path;
 
-class ShadowFileEntry {
+public class ShadowFileEntry {
     private final Path originalPath;
     private final Path shadowPath;
     private boolean contentLoaded;

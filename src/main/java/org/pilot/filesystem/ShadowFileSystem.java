@@ -8,16 +8,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
-class ShadowFileSystem {
+public class ShadowFileSystem {
     // 保存原始文件的绝对路径与对应 ShadowFileEntry 的映射
-    private final Map<Path, ShadowFileEntry> fileEntries = new HashMap<>();
+    public static final Map<Path, ShadowFileEntry> fileEntries = new HashMap<>();
     // 记录在 shadow 层已被删除的文件（使用原始文件的绝对路径）
-    private final Set<Path> deletedFiles = new HashSet<>();
+    public static final Set<Path> deletedFiles = new HashSet<>();
     // shadow 文件存放的根目录，本示例中设为当前目录下的 "shadow" 文件夹
-    private final Path shadowBaseDir;
+    public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/ShadowDirectory");
 
-    public ShadowFileSystem() throws IOException {
-        shadowBaseDir = Paths.get("shadow");
+    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/TempDir");
+
+    public ShadowFileSystem(Path shadowBaseDir) throws IOException {
+        assert shadowBaseDir != null;
         if (!Files.exists(shadowBaseDir)) {
             Files.createDirectories(shadowBaseDir);
         }
@@ -32,7 +34,12 @@ class ShadowFileSystem {
      * @param originalRoot 原始文件系统根目录
      * @throws IOException
      */
-    public void initializeFromOriginal(Path originalRoot) throws IOException {
+    public static void initializeFromOriginal() throws IOException {
+        if(Files.exists(shadowBaseDir)){
+            return;
+        }
+        Files.createDirectories(shadowBaseDir);
+
         Files.walkFileTree(originalRoot, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
@@ -72,7 +79,7 @@ class ShadowFileSystem {
      * @return 对应的 shadow 路径
      * @throws IOException
      */
-    private Path resolveShadowPath(Path absOriginal) throws IOException {
+    public static Path resolveShadowPath(Path absOriginal) throws IOException {
         // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
         // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
@@ -92,29 +99,6 @@ class ShadowFileSystem {
      * @return ShadowFileChannel 对象
      * @throws IOException
      */
-    public synchronized ShadowFileChannel open(Path originalPath, OpenOption... options) throws IOException {
-        Path absOriginal = originalPath.toAbsolutePath();
-        if (deletedFiles.contains(absOriginal)) {
-            throw new NoSuchFileException("File has been deleted in shadow system: " + absOriginal);
-        }
-        ShadowFileEntry entry = fileEntries.get(absOriginal);
-        if (entry == null) {
-            // 如果没有预加载，则采用原有逻辑创建占位
-            Path shadowPath = resolveShadowPath(absOriginal);
-            if (!Files.exists(shadowPath)) {
-                Files.createFile(shadowPath);
-            }
-            entry = new ShadowFileEntry(absOriginal, shadowPath);
-            fileEntries.put(absOriginal, entry);
-        }
-        // 如果尚未加载实际内容，则进行懒加载：复制原始文件内容到 shadow 文件中
-        if (!entry.isContentLoaded() && Files.exists(absOriginal) && Files.isRegularFile(absOriginal)) {
-            Files.copy(absOriginal, entry.getShadowPath(), StandardCopyOption.REPLACE_EXISTING);
-            entry.setContentLoaded(true);
-        }
-        FileChannel fileChannel = FileChannel.open(entry.getShadowPath(), options);
-        return new ShadowFileChannel(fileChannel, entry);
-    }
 
     /**
      * 在 shadow 文件系统中创建新文件。

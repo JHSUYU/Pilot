@@ -19,6 +19,8 @@ import static org.junit.Assert.*;
 
 
 import org.junit.Test;
+import org.pilot.filesystem.ShadowFileSystem;
+
 import java.io.*;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -60,6 +62,15 @@ public class TestIOManager {
 
         } finally {
             State.IOManager.closeAllShadowChannels();
+        }
+    }
+
+    @Test
+    public void testInitialization(){
+        try {
+            ShadowFileSystem.initializeFromOriginal();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 

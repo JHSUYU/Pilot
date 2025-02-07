@@ -17,7 +17,7 @@ public class State {
         if (isSet) {
             return dryRunField;
         } else {
-            return clone(originalField);
+            return originalField;
         }
     }
 
