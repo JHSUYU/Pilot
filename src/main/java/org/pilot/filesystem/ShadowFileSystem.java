@@ -10,13 +10,15 @@ import java.util.stream.Collectors;
 
 public class ShadowFileSystem {
     // 保存原始文件的绝对路径与对应 ShadowFileEntry 的映射
-    public static final Map<Path, ShadowFileEntry> fileEntries = new HashMap<>();
+    public static final Map<Path, ShadowFileState> fileEntries = new HashMap<>();
     // 记录在 shadow 层已被删除的文件（使用原始文件的绝对路径）
     public static final Set<Path> deletedFiles = new HashSet<>();
     // shadow 文件存放的根目录，本示例中设为当前目录下的 "shadow" 文件夹
     public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/ShadowDirectory");
 
-    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/TempDir");
+    public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/ShadowAppendLog");
+
+    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Pilot/src/tmp");
 
     public ShadowFileSystem(Path shadowBaseDir) throws IOException {
         assert shadowBaseDir != null;
@@ -39,14 +41,19 @@ public class ShadowFileSystem {
             return;
         }
         Files.createDirectories(shadowBaseDir);
+        Files.createDirectories(shadowAppendLogDir);
 
         Files.walkFileTree(originalRoot, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
                 Path absDir = dir.toAbsolutePath();
-                Path shadowDir = resolveShadowPath(absDir);
+                Path shadowDir = resolveShadowFSPath(absDir);
                 if (!Files.exists(shadowDir)) {
                     Files.createDirectories(shadowDir);
+                }
+                Path shadowLogDir = resolveShadowFSAppendLogDirPath(absDir);
+                if (!Files.exists(shadowLogDir)) {
+                    Files.createDirectories(shadowLogDir);
                 }
                 return FileVisitResult.CONTINUE;
             }
@@ -54,32 +61,17 @@ public class ShadowFileSystem {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                 Path absFile = file.toAbsolutePath();
-                Path shadowFile = resolveShadowPath(absFile);
-                // 如果 shadow 文件不存在，则创建一个空占位文件
-                if (!Files.exists(shadowFile)) {
+                Path shadowFile = resolveShadowFSPath(absFile);
+                if(!Files.exists(shadowFile)){
                     Files.createFile(shadowFile);
-                    // 可选：同步元数据，如最后修改时间
-                    Files.setLastModifiedTime(shadowFile, Files.getLastModifiedTime(absFile));
                 }
-                // 记录映射，标记内容尚未加载
-                fileEntries.put(absFile, new ShadowFileEntry(absFile, shadowFile));
+                fileEntries.put(absFile, new ShadowFileState(absFile, shadowBaseDir));
                 return FileVisitResult.CONTINUE;
             }
         });
     }
 
-    /**
-     * 将原始文件或目录的绝对路径映射为 shadow 文件系统中的路径，
-     * 保持与原始文件系统相同的目录结构。
-     *
-     * 例如，原始文件 "/data/sub/file.txt" 对应 shadow 路径为
-     * shadowBaseDir.resolve("data/sub/file.txt")
-     *
-     * @param absOriginal 原始文件或目录的绝对路径
-     * @return 对应的 shadow 路径
-     * @throws IOException
-     */
-    public static Path resolveShadowPath(Path absOriginal) throws IOException {
+    public static Path resolveShadowFSPath(Path absOriginal) throws IOException {
         // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
         // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
@@ -90,46 +82,26 @@ public class ShadowFileSystem {
         return shadowPath;
     }
 
-    /**
-     * 打开指定原始文件对应的 shadow 文件（支持 lazy copy / copy‑on‑write）。
-     * 如果映射中已有记录但 contentLoaded 为 false，则首次打开时将原始文件内容复制到 shadow 文件中。
-     *
-     * @param originalPath 原始文件路径（可以是相对路径或绝对路径）
-     * @param options      打开选项
-     * @return ShadowFileChannel 对象
-     * @throws IOException
-     */
+    public static Path resolveShadowFSAppendLogFilePath(Path absOriginal) throws IOException {
+        // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
+        // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
+        Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
+        Path shadowAppendLogPath = shadowAppendLogDir.resolve(relativePath).resolveSibling(
+                absOriginal.getFileName().toString() + ".log"
+        );;
 
-    /**
-     * 在 shadow 文件系统中创建新文件。
-     *
-     * @param originalPath 原始文件路径（作为映射 key）
-     * @throws IOException 如果原始文件已存在或创建失败
-     */
-    public synchronized void createFile(Path originalPath) throws IOException {
-        Path absOriginal = originalPath.toAbsolutePath();
-        if (Files.exists(absOriginal)) {
-            throw new FileAlreadyExistsException("Original file already exists: " + absOriginal);
-        }
-        Path shadowPath = resolveShadowPath(absOriginal);
-        Files.createDirectories(shadowPath.getParent());
-        Files.createFile(shadowPath);
-        ShadowFileEntry entry = new ShadowFileEntry(absOriginal, shadowPath);
-        entry.setContentLoaded(true); // 新建文件为空，视为已加载
-        fileEntries.put(absOriginal, entry);
+        return shadowAppendLogPath;
     }
 
-    /**
-     * 在 shadow 文件系统中创建目录，保持与原始文件系统相同的目录结构。
-     *
-     * @param originalDir 原始目录路径
-     * @throws IOException
-     */
-    public synchronized void createDirectory(Path originalDir) throws IOException {
-        Path absDir = originalDir.toAbsolutePath();
-        Path shadowDir = resolveShadowPath(absDir);
-        Files.createDirectories(shadowDir);
-        System.out.println("Directory created in shadow system: " + shadowDir);
+    public static Path resolveShadowFSAppendLogDirPath(Path absOriginal) throws IOException {
+        // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
+        // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
+        Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
+        Path shadowPath = shadowAppendLogDir.resolve(relativePath);
+        if (!Files.exists(shadowPath.getParent())) {
+            Files.createDirectories(shadowPath.getParent());
+        }
+        return shadowPath;
     }
 
     /**
@@ -141,18 +113,18 @@ public class ShadowFileSystem {
      * @param originalPath 原始文件路径
      * @throws IOException
      */
-    public synchronized void delete(Path originalPath) throws IOException {
-        Path absOriginal = originalPath.toAbsolutePath();
-        ShadowFileEntry entry = fileEntries.get(absOriginal);
-        if (entry != null) {
-            Files.deleteIfExists(entry.getShadowPath());
-            fileEntries.remove(absOriginal);
-        } else {
-            Path shadowPath = resolveShadowPath(absOriginal);
-            Files.deleteIfExists(shadowPath);
-        }
-        deletedFiles.add(absOriginal);
-    }
+//    public synchronized void delete(Path originalPath) throws IOException {
+//        Path absOriginal = originalPath.toAbsolutePath();
+//        ShadowFileEntry entry = fileEntries.get(absOriginal);
+//        if (entry != null) {
+//            Files.deleteIfExists(entry.getShadowPath());
+//            fileEntries.remove(absOriginal);
+//        } else {
+//            Path shadowPath = resolveShadowFSPath(absOriginal);
+//            Files.deleteIfExists(shadowPath);
+//        }
+//        deletedFiles.add(absOriginal);
+//    }
 
     /**
      * 列出指定目录下的文件或子目录，返回 shadow 文件系统中的路径列表，
@@ -164,7 +136,7 @@ public class ShadowFileSystem {
      */
     public synchronized List<Path> listDirectory(Path directory) throws IOException {
         Path absDirectory = directory.toAbsolutePath();
-        Path shadowDir = resolveShadowPath(absDirectory);
+        Path shadowDir = resolveShadowFSPath(absDirectory);
         List<Path> res = Files.list(shadowDir)
                 .map(Path::toAbsolutePath)
                 .collect(Collectors.toList());
