@@ -28,10 +28,11 @@ public class ShadowFileChannel extends FileChannel {
         return shadowFileState;
     }
 
-    private void rebuildFromLog() throws IOException {
+    private long rebuildFromLog() throws IOException {
         Path tempRebuiltPath = shadowFileState.reconstructedPath;
         Files.deleteIfExists(tempRebuiltPath);
         Files.createFile(tempRebuiltPath);
+        long position = 0;
 
         try (FileChannel rebuiltChannel = FileChannel.open(tempRebuiltPath,
                 StandardOpenOption.READ, StandardOpenOption.WRITE)) {
@@ -47,8 +48,10 @@ public class ShadowFileChannel extends FileChannel {
                 rebuiltChannel.position(operation.getOffset());
                 System.out.println("operation.getOffset()"+operation.getOffset());
                 rebuiltChannel.write(buffer);
+                position = rebuiltChannel.position();
             }
         }
+        return position;
     }
 
     public ShadowFileChannel(FileChannel delegate, ShadowFileState shadowFileState) {
@@ -62,10 +65,10 @@ public class ShadowFileChannel extends FileChannel {
             return delegate.read(dst);
         }
         if(Files.exists(shadowFileState.getAppendLogPath())){
-            rebuildFromLog();
+            long position = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
                     StandardOpenOption.READ, StandardOpenOption.WRITE);
-            //this.delegate.position(currentPosition);
+            this.delegate.position(position);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             int bytesRead = delegate.read(dst);
@@ -87,12 +90,12 @@ public class ShadowFileChannel extends FileChannel {
             return delegate.read(dsts, offset, length);
         }
         if(Files.exists(shadowFileState.getAppendLogPath())){
-            rebuildFromLog();
+            long position = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
                     StandardOpenOption.READ);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
-            //this.delegate.position(currentPosition);
+            this.delegate.position(position);
             return delegate.read(dsts, offset, length);
         } else {
             if(originalChannel == null){
@@ -108,12 +111,12 @@ public class ShadowFileChannel extends FileChannel {
             return delegate.read(dst, position);
         }
         if(Files.exists(shadowFileState.getAppendLogPath())){
-            rebuildFromLog();
+            long tmpPosition = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
                     StandardOpenOption.READ);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
-            //this.delegate.position(currentPosition);
+            this.delegate.position(tmpPosition);
             return delegate.read(dst, position);
         } else {
             if(originalChannel == null){
@@ -184,12 +187,13 @@ public class ShadowFileChannel extends FileChannel {
             return delegate.position();
         }
         if(Files.exists(shadowFileState.getAppendLogPath())){
-            rebuildFromLog();
+            long position = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
                     StandardOpenOption.READ);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
-            return delegate.position();
+            this.delegate.position(position);
+            return position;
         } else {
             if(originalChannel == null){
                 originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
