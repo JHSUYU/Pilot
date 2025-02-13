@@ -10,7 +10,7 @@ public class ShadowFileState {
     private final Path originalPath;
     private Path appendLogPath;
     public Path reconstructedPath;
-    public boolean existBeforePilot;
+    public boolean existBeforePilot=true;
 
     public ShadowFileState(Path originalPath, Path shadowRoot) {
         this.originalPath = originalPath;

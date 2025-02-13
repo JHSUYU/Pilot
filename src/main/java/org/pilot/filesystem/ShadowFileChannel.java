@@ -22,6 +22,8 @@ public class ShadowFileChannel extends FileChannel {
 
     private ShadowFileState shadowFileState;
 
+    public OpenOption[] options;
+
     private long currentPosition = 0;
 
     public ShadowFileState getShadowFileState() {
@@ -67,16 +69,16 @@ public class ShadowFileChannel extends FileChannel {
         if(Files.exists(shadowFileState.getAppendLogPath())){
             long position = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
-                    StandardOpenOption.READ, StandardOpenOption.WRITE);
+                    options);
             this.delegate.position(position);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             int bytesRead = delegate.read(dst);
-            return delegate.read(dst);
+            return bytesRead;
         } else {
 
             if(originalChannel == null){
-                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
+                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
             }
             int bytesRead = originalChannel.read(dst);
 
@@ -92,18 +94,35 @@ public class ShadowFileChannel extends FileChannel {
         if(Files.exists(shadowFileState.getAppendLogPath())){
             long position = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
-                    StandardOpenOption.READ);
+                    options);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             this.delegate.position(position);
             return delegate.read(dsts, offset, length);
         } else {
             if(originalChannel == null){
-                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
+                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
             }
             return originalChannel.read(dsts, offset, length);
         }
     }
+
+    private long copyOriginalFile() throws IOException {
+        Path tempRebuiltPath = shadowFileState.reconstructedPath;
+        Files.deleteIfExists(tempRebuiltPath);
+        Files.createFile(tempRebuiltPath);
+
+        try (FileChannel rebuiltChannel = FileChannel.open(tempRebuiltPath,
+                StandardOpenOption.READ, StandardOpenOption.WRITE);
+             FileChannel originalChannel = FileChannel.open(
+                     shadowFileState.getOriginalPath(), StandardOpenOption.READ)) {
+
+            originalChannel.transferTo(0, originalChannel.size(), rebuiltChannel);
+            return rebuiltChannel.size();
+        }
+    }
+
+
 
     @Override
     public int read(ByteBuffer dst, long position) throws IOException {
@@ -113,14 +132,14 @@ public class ShadowFileChannel extends FileChannel {
         if(Files.exists(shadowFileState.getAppendLogPath())){
             long tmpPosition = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
-                    StandardOpenOption.READ);
+                    options);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             this.delegate.position(tmpPosition);
             return delegate.read(dst, position);
         } else {
             if(originalChannel == null){
-                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
+                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
             }
             return originalChannel.read(dst);
         }
@@ -189,14 +208,14 @@ public class ShadowFileChannel extends FileChannel {
         if(Files.exists(shadowFileState.getAppendLogPath())){
             long position = rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
-                    StandardOpenOption.READ);
+                    options);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             this.delegate.position(position);
             return position;
         } else {
             if(originalChannel == null){
-                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
+                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
             }
             return originalChannel.position();
         }
@@ -211,14 +230,14 @@ public class ShadowFileChannel extends FileChannel {
         if(Files.exists(shadowFileState.getAppendLogPath())){
             rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
-                    StandardOpenOption.READ);
+                    options);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             this.delegate.position(newPosition);
             return this;
         } else {
             if(originalChannel == null){
-                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
+                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
             }
             originalChannel.position(newPosition);
             return this;
@@ -233,13 +252,13 @@ public class ShadowFileChannel extends FileChannel {
         if(Files.exists(shadowFileState.getAppendLogPath())){
             rebuildFromLog();
             this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
-                    StandardOpenOption.READ);
+                    options);
             shadowFileState.existBeforePilot = false;
             Files.deleteIfExists(shadowFileState.getAppendLogPath());
             return delegate.size();
         } else {
             if(originalChannel == null){
-                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), StandardOpenOption.READ);
+                originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
             }
             return originalChannel.size();
         }
@@ -251,7 +270,24 @@ public class ShadowFileChannel extends FileChannel {
             delegate.truncate(size);
             return this;
         }
-        return null;
+
+        if(Files.exists(shadowFileState.getAppendLogPath())){
+            rebuildFromLog();
+            this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
+                    options);
+            shadowFileState.existBeforePilot = false;
+            Files.deleteIfExists(shadowFileState.getAppendLogPath());
+            this.delegate.truncate(size);
+            return this.delegate;
+        } else {
+            //copy shadowFileState.getOriginalPath() file to shadowFileState.reconstructedPath
+            copyOriginalFile();
+            this.delegate = FileChannel.open(shadowFileState.reconstructedPath,
+                    options);
+            shadowFileState.existBeforePilot = false;
+            this.delegate.truncate(size);
+            return this.delegate;
+        }
     }
 
     @Override
@@ -333,28 +369,26 @@ public class ShadowFileChannel extends FileChannel {
         FileChannel fileChannel = FileChannel.open(shadowFile, newOptions);
 
         ShadowFileState shadowFileState = fileEntries.get(absOriginal);
-        boolean needSetDelegate = false;
         if(shadowFileState == null){
             shadowFileState = new ShadowFileState(absOriginal, ShadowFileSystem.shadowBaseDir);
             shadowFileState.existBeforePilot = false;
             shadowFileState.reconstructedPath = shadowFile;
-            needSetDelegate = true;
             shadowFileState.setAppendLogPath(ShadowFileSystem.resolveShadowFSAppendLogFilePath(absOriginal));
             fileEntries.put(absOriginal, shadowFileState);
         } else {
-            shadowFileState.existBeforePilot = exist;
+            if(shadowFileState.existBeforePilot){
+                shadowFileState.existBeforePilot = exist;
+            }
             shadowFileState.reconstructedPath = shadowFile;
             shadowFileState.setAppendLogPath(ShadowFileSystem.resolveShadowFSAppendLogFilePath(absOriginal));
-            if(!exist){
-                needSetDelegate = true;
-            }
             fileEntries.put(absOriginal, shadowFileState);
         }
         Files.deleteIfExists(shadowFileState.getAppendLogPath());
         ShadowFileChannel res = new ShadowFileChannel(fileChannel, shadowFileState);
-        if(needSetDelegate){
-            res.delegate = FileChannel.open(shadowFile, options);
+        if(!shadowFileState.existBeforePilot){
+            return fileChannel;
         }
+        res.options = newOptions;
         return res;
     }
 
@@ -372,4 +406,6 @@ public class ShadowFileChannel extends FileChannel {
         shadowFileState.recordOperation(operation);
         return data.length;
     }
+
+
 }

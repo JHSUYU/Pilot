@@ -18,7 +18,7 @@ public class ShadowFileSystem {
 
     public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/ShadowAppendLog");
 
-    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Pilot/src/tmp");
+    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/TempDir");
 
     public ShadowFileSystem(Path shadowBaseDir) throws IOException {
         assert shadowBaseDir != null;

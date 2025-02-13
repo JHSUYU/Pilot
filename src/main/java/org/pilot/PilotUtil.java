@@ -37,6 +37,13 @@ public class PilotUtil
         if(!isDryRun()) {
             dryRunLogger.info(message);
         } else {
+            //print stack trace
+            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+            StringBuilder sb = new StringBuilder();
+            for (StackTraceElement element : stackTrace) {
+                sb.append(element.toString()).append("\n");
+            }
+            dryRunLogger.info("trace in dry run is"+sb.toString());
             dryRunLogger.info(message + " in dry run mode");
         }
     }
