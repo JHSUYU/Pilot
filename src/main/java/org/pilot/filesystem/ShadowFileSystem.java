@@ -14,11 +14,11 @@ public class ShadowFileSystem {
     // 记录在 shadow 层已被删除的文件（使用原始文件的绝对路径）
     public static final Set<Path> deletedFiles = new HashSet<>();
     // shadow 文件存放的根目录，本示例中设为当前目录下的 "shadow" 文件夹
-    public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/ShadowDirectory");
+    public static Path shadowBaseDir = Paths.get("/users/ZhenyuLi/ShadowDirectory");
 
-    public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/ShadowAppendLog");
+    public static Path shadowAppendLogDir = Paths.get("/users/ZhenyuLi/ShadowAppendLog");
 
-    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-13938/TempDir");
+    public static Path originalRoot = Paths.get("/users/ZhenyuLi/cassandra_data");
 
     public ShadowFileSystem(Path shadowBaseDir) throws IOException {
         assert shadowBaseDir != null;
@@ -74,8 +74,15 @@ public class ShadowFileSystem {
     public static Path resolveShadowFSPath(Path absOriginal) throws IOException {
         // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
         // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
+        if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
+            System.out.println("File is already under the shadow base directory. No need to resolve."+absOriginal);
+            return absOriginal;
+        }
+        System.out.println("absOriginal: " + absOriginal);
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
+        System.out.println("relativePath: " + relativePath);
         Path shadowPath = shadowBaseDir.resolve(relativePath);
+        System.out.println("shadowPath: " + shadowPath);
         if (!Files.exists(shadowPath.getParent())) {
             Files.createDirectories(shadowPath.getParent());
         }
@@ -85,6 +92,10 @@ public class ShadowFileSystem {
     public static Path resolveShadowFSAppendLogFilePath(Path absOriginal) throws IOException {
         // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
         // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
+        if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
+            System.out.println("File is already under the shadow base directory. No need to resolve."+absOriginal);
+            return absOriginal;
+        }
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
         Path shadowAppendLogPath = shadowAppendLogDir.resolve(relativePath).resolveSibling(
                 absOriginal.getFileName().toString() + ".log"

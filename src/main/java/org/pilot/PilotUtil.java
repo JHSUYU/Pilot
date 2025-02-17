@@ -326,7 +326,12 @@ public class PilotUtil
 
     public static boolean shouldBeContextWrap(Runnable runnable, Executor executor) {
         dryRunLog("Checking if should be context wrapped");
+        dryRunLog("Runnable class is: " + runnable.getClass().getName() + " executor class is: " + executor.getClass().getName());
         dryRunLog("isDryRun is: " + isDryRun());
+        if(executor.getClass().getName().contains("SEPExecutor")) {
+            dryRunLog("should not be context wrapped");
+            return false;
+        }
         return true;
     }
 }

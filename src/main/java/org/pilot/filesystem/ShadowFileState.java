@@ -57,7 +57,6 @@ public class ShadowFileState {
 
         @Override
         protected void writeStreamHeader() throws IOException {
-            // 什么也不做，从而避免写入额外的流头
         }
     }
 
