@@ -5,18 +5,23 @@ import io.opentelemetry.context.Context;
 import io.opentelemetry.context.ContextKey;
 import io.opentelemetry.context.Scope;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class PilotUtil
 {
+    public static int count;
     private static final Logger dryRunLogger = LoggerFactory.getLogger(PilotUtil.class);
 
     private static Map<String, HashMap<String, WrapContext>> stateMap = new HashMap();
@@ -24,7 +29,10 @@ public class PilotUtil
     private static Map<String, HashMap<String, WrapContext>> fieldMap = new HashMap();
 
 
+
     public static boolean debug = false;
+
+    public static boolean verbose = false;
     public static final String DRY_RUN_KEY = "is_dry_run";
     public static final String FAST_FORWARD_KEY = "is_fast_forward";
 
@@ -34,21 +42,25 @@ public class PilotUtil
     public static ContextKey<Boolean> IS_DRY_RUN = ContextKey.named("is_dry_run");
 
     public static void dryRunLog(String message) {
+        if(!verbose){
+            return;
+        }
         if(!isDryRun()) {
             dryRunLogger.info(message);
         } else {
             //print stack trace
-            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            StringBuilder sb = new StringBuilder();
-            for (StackTraceElement element : stackTrace) {
-                sb.append(element.toString()).append("\n");
-            }
-            dryRunLogger.info("trace in dry run is"+sb.toString());
+//            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+//            StringBuilder sb = new StringBuilder();
+//            for (StackTraceElement element : stackTrace) {
+//                sb.append(element.toString()).append("\n");
+//            }
+//            dryRunLogger.info("trace in dry run is"+sb.toString());
             dryRunLogger.info(message + " in dry run mode");
         }
     }
 
     public static boolean isDryRun() {
+        count++;
         if(debug){
             return false;
         }else{
@@ -325,13 +337,70 @@ public class PilotUtil
     }
 
     public static boolean shouldBeContextWrap(Runnable runnable, Executor executor) {
-        dryRunLog("Checking if should be context wrapped");
-        dryRunLog("Runnable class is: " + runnable.getClass().getName() + " executor class is: " + executor.getClass().getName());
-        dryRunLog("isDryRun is: " + isDryRun());
+//        dryRunLog("Checking if should be context wrapped");
+//        dryRunLog("Runnable class is: " + runnable.getClass().getName() + " executor class is: " + executor.getClass().getName());
+//        dryRunLog("isDryRun is: " + isDryRun());
         if(executor.getClass().getName().contains("SEPExecutor")) {
-            dryRunLog("should not be context wrapped");
+            //dryRunLog("should not be context wrapped");
             return false;
         }
         return true;
     }
+
+    public static String initNewExec(){
+        String executionId = generateExecutionId();
+        long startTime = System.currentTimeMillis();
+        executionStartTimes.put(mock, startTime);
+
+        recordTime(startTime/1000,"/users/ZhenyuLi/starttime.txt");
+
+        dryRunLog("Starting pilot execution with ID: " + executionId);
+        return executionId;
+    }
+
+    public static void recordTime(long startTime, String path) {
+        try {
+            File file = new File(path);
+            if (file.exists()) {
+                file.delete();
+            }
+            // Create parent directories if they don't exist
+            file.getParentFile().mkdirs();
+
+            // Write the start time to the file
+            FileWriter writer = new FileWriter(file);
+            writer.write(String.valueOf(startTime));
+            writer.close();
+        } catch (IOException e) {
+            dryRunLog("Error writing start time to file: " + e.getMessage());
+        }
+    }
+
+
+
+    private static final ConcurrentHashMap<String, Long> executionStartTimes = new ConcurrentHashMap<>();
+    private static final AtomicLong executionIdGenerator = new AtomicLong(0);
+
+    public static final String mock = "mock";
+
+
+    /**
+     * 生成唯一的执行ID
+     * @return 生成的执行ID
+     */
+    private static String generateExecutionId() {
+        long id = executionIdGenerator.incrementAndGet();
+        return "PILOT-" + id + "-" + System.nanoTime();
+    }
+
+
+    public static long getExecutionRuntime(String executionId) {
+        Long startTime = executionStartTimes.get(mock);
+        if (startTime == null) {
+            return -1;
+        }
+        return (System.currentTimeMillis() - startTime) / 1000;
+    }
+
+
 }

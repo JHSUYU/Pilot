@@ -36,6 +36,23 @@ public class ShadowFile{
         return null;
     }
 
+    public static File initFile(String pathname){
+        if(!PilotUtil.isDryRun()){
+            return new File(pathname);
+        }
+
+        try{
+            ShadowFileSystem.initializeFromOriginal();
+
+            String shadowFilePath = ShadowFileSystem.getShadowFSPathString(pathname);
+            System.out.println("Shadow file path: " + shadowFilePath.toString());
+            return new File(shadowFilePath);
+        }catch(IOException e){
+            System.out.println("Error initializing ShadowFileSystem: " + e.getMessage());
+        }
+        return null;
+    }
+
     public ShadowFile(File parent, String child) {
 
     }

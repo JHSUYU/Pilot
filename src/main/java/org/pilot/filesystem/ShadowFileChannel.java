@@ -359,6 +359,7 @@ public class ShadowFileChannel extends FileChannel {
         Path shadowFile = ShadowFileSystem.resolveShadowFSPath(absOriginal);
         boolean exist = Files.exists(shadowFile);
         if (!exist){
+            PilotUtil.dryRunLog("create file"+shadowFile.toString());
             Files.createFile(shadowFile);
         }
 
@@ -386,6 +387,7 @@ public class ShadowFileChannel extends FileChannel {
         Files.deleteIfExists(shadowFileState.getAppendLogPath());
         ShadowFileChannel res = new ShadowFileChannel(fileChannel, shadowFileState);
         if(!shadowFileState.existBeforePilot){
+            PilotUtil.dryRunLog("return normal fileChannel with path"+shadowFile.toAbsolutePath());
             return fileChannel;
         }
         res.options = newOptions;
