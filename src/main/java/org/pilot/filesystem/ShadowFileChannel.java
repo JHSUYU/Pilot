@@ -31,6 +31,8 @@ public class ShadowFileChannel extends FileChannel {
     }
 
     private long rebuildFromLog() throws IOException {
+        long start = System.currentTimeMillis();
+
         Path tempRebuiltPath = shadowFileState.reconstructedPath;
         Files.deleteIfExists(tempRebuiltPath);
         Files.createFile(tempRebuiltPath);
@@ -48,11 +50,12 @@ public class ShadowFileChannel extends FileChannel {
             for (FileOperation operation : shadowFileState.getOperations()) {
                 ByteBuffer buffer = ByteBuffer.wrap(operation.getData());
                 rebuiltChannel.position(operation.getOffset());
-                System.out.println("operation.getOffset()"+operation.getOffset());
+                PilotUtil.dryRunLog("operation.getOffset()"+operation.getOffset());
                 rebuiltChannel.write(buffer);
                 position = rebuiltChannel.position();
             }
         }
+        PilotUtil.recordTime(System.currentTimeMillis()-start,"/users/ZhenyuLi/rebuildFromLog.txt");
         return position;
     }
 

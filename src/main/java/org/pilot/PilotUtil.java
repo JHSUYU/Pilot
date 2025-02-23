@@ -61,12 +61,22 @@ public class PilotUtil
 
     public static boolean isDryRun() {
         count++;
-        if(debug){
-            return false;
-        }else{
-            return Baggage.current().getEntryValue(DRY_RUN_KEY) != null && Boolean.parseBoolean(Baggage.current().getEntryValue(DRY_RUN_KEY));
+        if (count % 10000000 == 0) {
+            dryRunLogger.info("Current count value: " + count);
+            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+            StringBuilder sb = new StringBuilder();
+            for (StackTraceElement element : stackTrace) {
+                sb.append(element.toString()).append("\n");
+            }
+            dryRunLogger.info("trace in dry run is"+sb.toString());
         }
-        //return false;
+
+//        if(debug){
+//            return false;
+//        }else{
+//            return Baggage.current().getEntryValue(DRY_RUN_KEY) != null && Boolean.parseBoolean(Baggage.current().getEntryValue(DRY_RUN_KEY));
+//        }
+        return Boolean.parseBoolean(Baggage.current().getEntryValue(DRY_RUN_KEY));
     }
 
     public static boolean isShadow() {
@@ -352,7 +362,7 @@ public class PilotUtil
         long startTime = System.currentTimeMillis();
         executionStartTimes.put(mock, startTime);
 
-        recordTime(startTime/1000,"/users/ZhenyuLi/starttime.txt");
+        recordTime(startTime,"/users/ZhenyuLi/starttime.txt");
 
         dryRunLog("Starting pilot execution with ID: " + executionId);
         return executionId;
@@ -361,15 +371,16 @@ public class PilotUtil
     public static void recordTime(long startTime, String path) {
         try {
             File file = new File(path);
-            if (file.exists()) {
-                file.delete();
-            }
             // Create parent directories if they don't exist
-            file.getParentFile().mkdirs();
+            if (!file.getParentFile().exists()) {
+                file.getParentFile().mkdirs();
+            }
 
-            // Write the start time to the file
-            FileWriter writer = new FileWriter(file);
+            // Use FileWriter with append mode (true)
+            FileWriter writer = new FileWriter(file, true);
             writer.write(String.valueOf(startTime));
+            // 可以添加换行符，使每条记录独占一行
+            writer.write(System.lineSeparator());
             writer.close();
         } catch (IOException e) {
             dryRunLog("Error writing start time to file: " + e.getMessage());

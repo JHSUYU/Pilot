@@ -77,12 +77,12 @@ public class ShadowFileSystem {
         // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
         // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
         if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
-            System.out.println("File is already under the shadow base directory. No need to resolve."+absOriginal);
+            PilotUtil.dryRunLog("File is already under the shadow base directory. No need to resolve."+absOriginal);
             return absOriginal;
         }
-        System.out.println("absOriginal: " + absOriginal);
+        PilotUtil.dryRunLog("absOriginal: " + absOriginal);
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
-        System.out.println("relativePath: " + relativePath);
+        PilotUtil.dryRunLog("relativePath: " + relativePath);
         Path shadowPath = shadowBaseDir.resolve(relativePath);
         PilotUtil.dryRunLog("shadowPath: " + shadowPath);
         if (!Files.exists(shadowPath.getParent())) {
@@ -97,13 +97,13 @@ public class ShadowFileSystem {
 
 
         if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
-            System.out.println("File is already under the shadow base directory. No need to resolve." + absOriginalStr);
+            PilotUtil.dryRunLog("File is already under the shadow base directory. No need to resolve." + absOriginalStr);
             return absOriginalStr;
         }
 
-        System.out.println("absOriginal: " + absOriginalStr);
+        PilotUtil.dryRunLog("absOriginal: " + absOriginalStr);
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
-        System.out.println("relativePath: " + relativePath);
+        PilotUtil.dryRunLog("relativePath: " + relativePath);
 
         Path shadowPath = shadowBaseDir.resolve(relativePath);
         PilotUtil.dryRunLog("shadowPath: " + shadowPath);
@@ -123,9 +123,9 @@ public class ShadowFileSystem {
             System.out.println("File is already under the shadow base directory. No need to resolve."+absOriginal);
             return absOriginal;
         }
-        System.out.println("absOriginal: " + absOriginal);
+        PilotUtil.dryRunLog("absOriginal: " + absOriginal);
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());
-        System.out.println("relativePath: " + relativePath);
+        PilotUtil.dryRunLog("relativePath: " + relativePath);
         Path shadowPath = shadowBaseDir.resolve(relativePath);
         PilotUtil.dryRunLog("shadowPath: " + shadowPath);
         return shadowPath;
@@ -135,7 +135,7 @@ public class ShadowFileSystem {
         // 这里假定原始文件系统的根目录与 shadow 系统没有公共前缀，
         // 因此直接使用整个相对路径拼接到 shadowBaseDir 下
         if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
-            System.out.println("File is already under the shadow base directory. No need to resolve."+absOriginal);
+            PilotUtil.dryRunLog("File is already under the shadow base directory. No need to resolve."+absOriginal);
             return absOriginal;
         }
         Path relativePath = absOriginal.subpath(0, absOriginal.getNameCount());

@@ -25,10 +25,10 @@ public class ShadowFile{
         try{
             ShadowFileSystem.initializeFromOriginal();
             Path originalFilePath = Paths.get(parent.getAbsolutePath(), child);
-            System.out.println("Original file path: " + originalFilePath.toString());
+            PilotUtil.dryRunLog("Original file path: " + originalFilePath.toString());
 
             Path shadowFilePath = ShadowFileSystem.resolveShadowFSPath(originalFilePath);
-            System.out.println("Shadow file path: " + shadowFilePath.toString());
+            PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
             return shadowFilePath.toFile();
         }catch(IOException e){
             System.out.println("Error initializing ShadowFileSystem: " + e.getMessage());
@@ -45,7 +45,7 @@ public class ShadowFile{
             ShadowFileSystem.initializeFromOriginal();
 
             String shadowFilePath = ShadowFileSystem.getShadowFSPathString(pathname);
-            System.out.println("Shadow file path: " + shadowFilePath.toString());
+            PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
             return new File(shadowFilePath);
         }catch(IOException e){
             System.out.println("Error initializing ShadowFileSystem: " + e.getMessage());
