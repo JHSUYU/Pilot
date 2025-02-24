@@ -28,7 +28,7 @@ public class PilotUtil
 
     private static Map<String, HashMap<String, WrapContext>> fieldMap = new HashMap();
 
-
+    public static int forkCount = 0;
 
     public static boolean debug = false;
 

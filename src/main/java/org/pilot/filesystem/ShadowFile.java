@@ -1,6 +1,5 @@
 package org.pilot.filesystem;
 
-import javafx.scene.effect.Shadow;
 import org.pilot.PilotUtil;
 
 import java.io.File;
@@ -25,6 +24,7 @@ public class ShadowFile{
         try{
             ShadowFileSystem.initializeFromOriginal();
             Path originalFilePath = Paths.get(parent.getAbsolutePath(), child);
+
             PilotUtil.dryRunLog("Original file path: " + originalFilePath.toString());
 
             Path shadowFilePath = ShadowFileSystem.resolveShadowFSPath(originalFilePath);
