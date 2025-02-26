@@ -10,17 +10,26 @@ import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
+import static org.pilot.PilotUtil.debug;
+
 public class ShadowFileSystem {
     // 保存原始文件的绝对路径与对应 ShadowFileEntry 的映射
     public static final Map<Path, ShadowFileState> fileEntries = new HashMap<>();
     // 记录在 shadow 层已被删除的文件（使用原始文件的绝对路径）
     public static final Set<Path> deletedFiles = new HashSet<>();
+
     // shadow 文件存放的根目录，本示例中设为当前目录下的 "shadow" 文件夹
     public static Path shadowBaseDir = Paths.get("/opt/ShadowDirectory");
 
     public static Path shadowAppendLogDir = Paths.get("/opt/ShadowAppendLog");
 
     public static Path originalRoot = Paths.get("/opt/cassandra_data");
+
+//    public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowDirectory");
+//
+//    public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowAppendLog");
+//
+//    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/TempDir");
 
     public ShadowFileSystem(Path shadowBaseDir) throws IOException {
         assert shadowBaseDir != null;
@@ -39,6 +48,9 @@ public class ShadowFileSystem {
      * @throws IOException
      */
     public static void initializeFromOriginal() throws IOException {
+        if (debug) {
+            return;
+        }
         if(Files.exists(shadowBaseDir)){
             return;
         }

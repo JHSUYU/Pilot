@@ -8,9 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 
+import static org.pilot.PilotUtil.debug;
+
 public class ShadowFileOutputStream {
     public static FileOutputStream initShadowFileOutputStream(String filePath) throws IOException {
-        if (!PilotUtil.isDryRun()) {
+        if (debug || !PilotUtil.isDryRun()) {
             return new FileOutputStream(filePath);
         }
 
@@ -22,7 +24,7 @@ public class ShadowFileOutputStream {
 
     public static BufferedWriter initShadowBufferedWriter(Path path, Charset cs,
                                                    OpenOption... options) throws IOException {
-        if (!PilotUtil.isDryRun()) {
+        if (debug || !PilotUtil.isDryRun()) {
             return Files.newBufferedWriter(path,cs, options);
         }
 

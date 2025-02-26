@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import static org.pilot.PilotUtil.debug;
 import static org.pilot.filesystem.ShadowFileSystem.shadowBaseDir;
 
 public class ShadowFile{
@@ -17,11 +18,12 @@ public class ShadowFile{
 
 
     public static File initFile(File parent, String child){
-        if(!PilotUtil.isDryRun()){
+        if(debug || !PilotUtil.isDryRun()){
             return new File(parent, child);
         }
 
         try{
+
             ShadowFileSystem.initializeFromOriginal();
             Path originalFilePath = Paths.get(parent.getAbsolutePath(), child);
 
@@ -31,13 +33,13 @@ public class ShadowFile{
             PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
             return shadowFilePath.toFile();
         }catch(IOException e){
-            System.out.println("Error initializing ShadowFileSystem: " + e.getMessage());
+            PilotUtil.dryRunLog("Error initializing ShadowFileSystem: " + e.getMessage() + e);
         }
         return null;
     }
 
     public static File initFile(String pathname){
-        if(!PilotUtil.isDryRun()){
+        if(debug || !PilotUtil.isDryRun()){
             return new File(pathname);
         }
 
@@ -48,7 +50,7 @@ public class ShadowFile{
             PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
             return new File(shadowFilePath);
         }catch(IOException e){
-            System.out.println("Error initializing ShadowFileSystem: " + e.getMessage());
+            PilotUtil.dryRunLog("Error initializing ShadowFileSystem: " + e.getMessage() + e);
         }
         return null;
     }

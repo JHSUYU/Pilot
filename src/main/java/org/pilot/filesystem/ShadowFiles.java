@@ -7,9 +7,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import static org.pilot.PilotUtil.debug;
+
 public class ShadowFiles {
     public static void delete(Path path) throws IOException {
-        if(!PilotUtil.isDryRun()){
+        if(debug || !PilotUtil.isDryRun()){
             Files.delete(path);
             return;
         }

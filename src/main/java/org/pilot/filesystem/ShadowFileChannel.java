@@ -13,6 +13,7 @@ import java.nio.channels.WritableByteChannel;
 import java.nio.file.*;
 import java.util.Arrays;
 
+import static org.pilot.PilotUtil.debug;
 import static org.pilot.filesystem.ShadowFileSystem.fileEntries;
 
 public class ShadowFileChannel extends FileChannel {
@@ -352,7 +353,7 @@ public class ShadowFileChannel extends FileChannel {
     }
 
     public static FileChannel open(Path originalPath, OpenOption... options) throws IOException {
-        if(!PilotUtil.isDryRun()){
+        if(debug || !PilotUtil.isDryRun()){
             return FileChannel.open(originalPath, options);
         }
         PilotUtil.dryRunLog("ShadowFileChannel.open"+originalPath.toString());
