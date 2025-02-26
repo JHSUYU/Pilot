@@ -46,6 +46,7 @@ public class ConditionVariableWrapper<T> {
 
         if(invokedByDryRun && PilotUtil.forkCount == 0 && target != null){
             LOG.info("ConditionVariableWrapper createShadowThread invoked by DryRun using reflection");
+            this.lock.unlock();
             try {
                 Class<?> targetClass = target.getClass();
                 Method createShadowThreadMethod = targetClass.getMethod("createShadowThread");
@@ -53,6 +54,7 @@ public class ConditionVariableWrapper<T> {
             } catch (Exception e) {
                 LOG.error("Failed to invoke createShadowThread via reflection", e);
             }
+            this.realAwait();
         }
     }
 
