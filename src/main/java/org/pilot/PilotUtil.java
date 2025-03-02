@@ -60,16 +60,16 @@ public class PilotUtil
     }
 
     public static boolean isDryRun() {
-        count++;
-        if (count % 10000000 == 0) {
-            dryRunLogger.info("Current count value: " + count);
-            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            StringBuilder sb = new StringBuilder();
-            for (StackTraceElement element : stackTrace) {
-                sb.append(element.toString()).append("\n");
-            }
-            dryRunLogger.info("trace in dry run is"+sb.toString());
-        }
+//        count++;
+//        if (count % 10000000 == 0) {
+//            dryRunLogger.info("Current count value: " + count);
+//            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+//            StringBuilder sb = new StringBuilder();
+//            for (StackTraceElement element : stackTrace) {
+//                sb.append(element.toString()).append("\n");
+//            }
+//            dryRunLogger.info("trace in dry run is"+sb.toString());
+//        }
 
 //        if(debug){
 //            return false;

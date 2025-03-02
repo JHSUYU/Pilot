@@ -19,6 +19,11 @@ public class LockWrapper<T> {
         this.lock = lock;
     }
 
+    public LockWrapper(ReentrantLock lock, T target) {
+        this.lock = lock;
+        this.target = target;
+    }
+
     public void realLock() {
         this.lock.lock();
     }
