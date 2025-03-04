@@ -2,7 +2,6 @@ replace_cassandra.sh
 test_channel.txt
 .idea
 tmp
-test
 target
 testDir
 *.txt
