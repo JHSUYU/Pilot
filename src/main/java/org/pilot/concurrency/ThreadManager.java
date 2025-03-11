@@ -6,8 +6,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 public class ThreadManager {
+
+    public static Map<UUID, List<ScheduledFuture<?>>> phantomScheduledFutureMap = new ConcurrentHashMap<>();
     public static Map<UUID, List<Thread>> phantomThreadMap = new ConcurrentHashMap<>();
 
     private static ZooKeeperClient zooKeeperClient;
@@ -16,7 +19,7 @@ public class ThreadManager {
 
     public static final String mockID = "00000000-0000-0000-0000-000000000000";
 
-    public static final String connectionString = "localhost:2181"; //
+    public static final String connectionString = "node0:2181"; //
 
 
     static {
@@ -41,6 +44,7 @@ public class ThreadManager {
                     try {
                         UUID uuid = UUID.fromString(nodeName);
                         cleanupPhantomThreads(uuid);
+                        cleanupPhantomScheduledFutures(uuid);
                     } catch (IllegalArgumentException e) {
                         System.err.println("Invalid UUID format in deleted node: " + nodeName);
                     }
@@ -51,6 +55,22 @@ public class ThreadManager {
         } catch (Exception e) {
             System.err.println("Failed to initialize ZooKeeper: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+
+    public static void cleanupPhantomScheduledFutures(UUID dryRunId) {
+        List<ScheduledFuture<?>> futures = phantomScheduledFutureMap.get(dryRunId);
+        if (futures != null) {
+            for (ScheduledFuture<?> future : futures) {
+                if (!future.isDone()) {
+                    System.out.println("Cancelling phantom scheduled future: " + future.toString());
+                    future.cancel(true);
+                }
+            }
+            phantomScheduledFutureMap.remove(dryRunId);
+            System.out.println("Removed phantom scheduled futures for UUID: " + dryRunId.toString());
+            System.out.println("Current phantom scheduled future map: " + phantomScheduledFutureMap.toString());
         }
     }
 
@@ -88,6 +108,14 @@ public class ThreadManager {
         return t;
     }
 
+    public static void trackDryRunScheduledFuture(ScheduledFuture<?> future) {
+        // Add to phantom thread map
+        phantomScheduledFutureMap.putIfAbsent(UUID.fromString(mockID), new java.util.ArrayList<>());
+        phantomScheduledFutureMap.get(UUID.fromString(mockID)).add(future);
+    }
+
+
+
     public static void registerNode() {
         try {
             // Create a node with UUID "0" under the dry-run path
@@ -106,7 +134,7 @@ public class ThreadManager {
         }
     }
 
-public static void unregisterNode() {
+    public static void unregisterNode() {
         try {
             // Delete the node with UUID "0" under the dry-run path
             UUID fixedUuid = UUID.fromString(mockID);
@@ -121,6 +149,17 @@ public static void unregisterNode() {
             }
         } catch (Exception e) {
             System.err.println("Failed to unregister node: " + e.getMessage());
+        }
+    }
+
+    public static boolean isPilotInProgress(String uuid){
+        try {
+            UUID fixedUuid = UUID.fromString(mockID);
+            String nodePath = DRY_RUN_PATH + "/" + fixedUuid.toString();
+            return zooKeeperClient.exists(nodePath);
+        } catch (Exception e) {
+            System.err.println("Failed to check node existence: " + e.getMessage());
+            return false;
         }
     }
 
