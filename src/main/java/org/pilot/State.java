@@ -1,5 +1,6 @@
 package org.pilot;
 
+import com.rits.cloning.Cloner;
 import java.io.FileOutputStream;
 import java.lang.reflect.Field;
 import java.nio.channels.FileChannel;
@@ -17,7 +18,7 @@ public class State {
         if (isSet) {
             return dryRunField;
         } else {
-            return originalField;
+            return clone(originalField);
         }
     }
 
@@ -34,6 +35,8 @@ public class State {
             return (T) cloneQueue((Queue<?>) obj);
         } else if (obj instanceof List) {
             return (T) cloneList((List<?>) obj);
+        } else if (obj instanceof Thread) {
+	    return (T) cloneThread((Thread) obj);
         } else if (obj instanceof FileChannel){
             return (T)IOManager.handleFileChannel((FileChannel) obj);
         } else if (obj instanceof FileOutputStream){
@@ -99,6 +102,13 @@ public class State {
         }
     }
 
+    private static <E extends Enum<E>, V> Map<E, V> cloneEnumMap(EnumMap<E, V> original) {
+        if (original == null) {
+            return null;
+        }
+        return new EnumMap<>(original);
+    }
+
     private static <K, V> Map<K, V> cloneMap(Map<K, V> original) {
         if (original == null) {
             return null;
@@ -110,7 +120,13 @@ public class State {
             return new LinkedHashMap<>(original);
         } else if (original instanceof ConcurrentHashMap) {
             return new ConcurrentHashMap<>(original);
-        } else if (original instanceof ConcurrentSkipListMap) {
+        } else if (original instanceof ConcurrentMap) {
+	    return new ConcurrentHashMap<>(original);
+        } else if (original instanceof EnumMap) {
+	    @SuppressWarnings("unchecked")
+            EnumMap<? extends Enum<?>, V> enumMap = (EnumMap<? extends Enum<?>, V>) original;
+            return cloneEnumMap((EnumMap) enumMap);
+	} else if (original instanceof ConcurrentSkipListMap) {
             ConcurrentSkipListMap<K, V> originalCSLM = (ConcurrentSkipListMap<K, V>) original;
             ConcurrentSkipListMap<K, V> newCSLM = new ConcurrentSkipListMap<>(originalCSLM.comparator());
             for (Map.Entry<K, V> entry : original.entrySet()) {
@@ -139,11 +155,13 @@ public class State {
         } else if (original instanceof ConcurrentLinkedQueue) {
             return new ConcurrentLinkedQueue<>(original);
         } else if (original instanceof BlockingQueue) {
-            if (original instanceof ArrayBlockingQueue) {
+	    if (original instanceof ArrayBlockingQueue) {
                 ArrayBlockingQueue<E> abq = (ArrayBlockingQueue<E>) original;
                 return new ArrayBlockingQueue<>(abq.size(), abq.remainingCapacity() == 0, original);
             } else if (original instanceof LinkedBlockingQueue) {
                 return new LinkedBlockingQueue<>(original);
+	    } else if (original instanceof LinkedBlockingDeque) {
+		return new LinkedBlockingDeque<>(original);
             } else if (original instanceof PriorityBlockingQueue) {
                 return new PriorityBlockingQueue<>(original);
             }
@@ -170,6 +188,42 @@ public class State {
             return new CopyOnWriteArrayList<>(original);
         } else {
             return new ArrayList<>(original);
+        }
+    }
+
+    private static Thread cloneThread(Thread original) {
+	if (original == null) {
+	    return null;
+	}
+
+        /*Cloner cloner = new Cloner();
+        cloner.dontClone(Context.class); // Skip cloning Context
+	cloner.dontClone(Baggage.class); // Skip other OTEL classes if needed
+				  
+	try {
+            return cloner.deepClone(original);
+        } catch (Exception e) {
+            System.err.println("Failed to clone Thread: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }*/
+	try {	
+	  // Use reflection to access the private "target" field (the Runnable)
+          Field targetField = Thread.class.getDeclaredField("target");
+          targetField.setAccessible(true); // Bypass private access
+          Runnable target = (Runnable) targetField.get(original);
+          Thread clone = new Thread(target);
+          clone.setName(original.getName());
+          clone.setPriority(original.getPriority());
+          clone.setDaemon(original.isDaemon());
+          clone.setUncaughtExceptionHandler(original.getUncaughtExceptionHandler());
+          clone.setContextClassLoader(original.getContextClassLoader());
+
+	  return clone;
+	} catch (NoSuchFieldException | IllegalAccessException e) {
+            System.err.println("Failed to clone Thread: " + e.getMessage());
+            e.printStackTrace();
+            return null;
         }
     }
 }

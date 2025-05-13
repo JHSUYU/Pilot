@@ -32,10 +32,9 @@ public class PilotUtil
 
     public static boolean debug = false;
 
-    public static boolean verbose = false;
+    public static boolean verbose = true;
     public static final String DRY_RUN_KEY = "is_dry_run";
     public static final String FAST_FORWARD_KEY = "is_fast_forward";
-
     public static final String IS_SHADOW_THREAD_KEY = "is_shadow_thread";
 
     public static final String SHOULD_RELEASE_LOCK_KEY = "should_release_lock";
