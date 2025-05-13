@@ -1,73 +1,87 @@
 package org.pilot.concurrency;
 
+import io.opentelemetry.context.Context;
 import org.pilot.PilotUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.LockSupport;
 
-public class ConditionVariableWrapper<T> {
-    private static final Logger LOG = LoggerFactory.getLogger(ConditionVariableWrapper.class);
-    public boolean invokedByDryRun = false;
+public class ConditionVariableWrapper implements Condition {
+    private Condition delegate;
+    private LockWrapper associatedLock;
 
-    public Condition condition;
-
-    public T target;
-
-    public ReentrantLock lock;
-
-    public ConditionVariableWrapper(Condition condition, ReentrantLock lock, T target) {
-        this.condition = condition;
-        this.lock = lock;
-        this.target = target;
-    }
-    public ConditionVariableWrapper(Condition condition, ReentrantLock lock) {
-        this.condition = condition;
-        this.lock = lock;
+    private static class WaitNode{
+        Thread thread;
+        boolean isPhantom;
+        WaitNode(Thread thread, boolean isPhantom){
+            this.thread = thread;
+            this.isPhantom = isPhantom;
+        }
     }
 
-    public void realAwait() throws InterruptedException {
-        this.condition.await();
+    private Queue<WaitNode> queue = new ConcurrentLinkedQueue<>();
+
+    public ConditionVariableWrapper(Condition delegate, LockWrapper lock) {
+        this.delegate = delegate;
+        this.associatedLock = lock;
     }
 
+    @Override
     public void await() throws InterruptedException {
-        LOG.info("ConditionVariableWrapper.await()");
-        if(PilotUtil.isShadow()){
-            LOG.info("ConditionVariableWrapper.await() isShadow");
-            PilotUtil.clearBaggage();
-            PilotUtil.createDryRunBaggage();
-            this.lock.lock();
-            return;
-        }
-        this.condition.await();
-
-        if(invokedByDryRun && PilotUtil.forkCount == 0 && target != null){
-            LOG.info("ConditionVariableWrapper createShadowThread invoked by DryRun using reflection");
-            this.lock.unlock();
-            try {
-                Class<?> targetClass = target.getClass();
-                Method createShadowThreadMethod = targetClass.getMethod("createShadowThread");
-                createShadowThreadMethod.invoke(target);
-            } catch (Exception e) {
-                LOG.error("Failed to invoke createShadowThread via reflection", e);
-            }
-            this.realAwait();
+        if(!PilotUtil.isDryRun()){
+            queue.add(new WaitNode(Thread.currentThread(), false));
+            delegate.await();
+        }else{
+            Thread me = Thread.currentThread();
+            queue.add(new WaitNode(me, true));
+            associatedLock.unlock();
+            LockSupport.park(this);
+            associatedLock.lock();
         }
     }
 
-    public boolean await(long time, TimeUnit unit) throws InterruptedException{
-        LOG.info("ConditionVariableWrapper.await(long time, TimeUnit unit)");
-        return this.condition.await(time, unit);
-    }
-
+    @Override
     public void signal() {
-        LOG.info("ConditionVariableWrapper.signal()");
-        if(PilotUtil.isDryRun()){
-            invokedByDryRun = true;
+        if(!PilotUtil.isDryRun()){
+            delegate.signal();
+        }else{
+            WaitNode node = queue.poll();
+            if(node == null){
+                return;
+            }
+
+            if(!node.isPhantom){
+                System.out.println("Micro Fork");
+            }else{
+                LockSupport.unpark(node.thread);
+            }
         }
-        this.condition.signal();
     }
+
+    @Override
+    public void signalAll() {
+        if(!PilotUtil.isDryRun()){
+            delegate.signalAll();
+        }else {
+            WaitNode node;
+            while((node = queue.poll()) != null){
+                if(!node.isPhantom){
+                    System.out.println("Micro Fork");
+                }else{
+                    LockSupport.unpark(node.thread);
+                }
+            }
+        }
+    }
+
+
+    @Override public void awaitUninterruptibly()               { throw new UnsupportedOperationException(); }
+    @Override public long awaitNanos(long nanosTimeout)        { throw new UnsupportedOperationException(); }
+    @Override public boolean await(long time, TimeUnit unit)    { throw new UnsupportedOperationException(); }
+    @Override public boolean awaitUntil(java.util.Date deadline){ throw new UnsupportedOperationException(); }
 }

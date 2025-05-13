@@ -1,67 +1,111 @@
 package org.pilot.concurrency;
 
 import org.pilot.PilotUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 
-public class LockWrapper<T> {
-    private static final Logger LOG = LoggerFactory.getLogger(LockWrapper.class);
+public class LockWrapper implements Lock {
+    private final Lock delegate;
 
-    public ReentrantLock lock;
-    public boolean modifiedByDryRun = false;
+    private final AtomicLong ticketDispenser = new AtomicLong(0);
 
-    public T target;
+    private final AtomicLong nextServeId = new AtomicLong(0);
 
-    public LockWrapper(ReentrantLock lock) {
-        this.lock = lock;
+    public int holdCounts = 0;
+
+    public LockWrapper(Lock delegate) {
+        this.delegate = delegate;
     }
 
-    public LockWrapper(ReentrantLock lock, T target) {
-        this.lock = lock;
-        this.target = target;
+    public  String contextKey(){
+        return "";
     }
 
-    public void realLock() {
-        this.lock.lock();
-    }
 
-    public void realUnlock() {
-        this.lock.unlock();
-    }
-
+    @Override
     public void lock() {
-        if(PilotUtil.isShadow()){
-            LOG.info("LockWrapper.lock() isShadow");
-            PilotUtil.clearBaggage();
-            PilotUtil.createDryRunBaggage();
-        }
 
-        this.lock.lock();
-
-        if(modifiedByDryRun && PilotUtil.forkCount == 0 && target != null){
-            LOG.info("ConditionVariableWrapper createShadowThread invoked by DryRun using reflection");
-            this.lock.unlock();
-            try {
-                Class<?> targetClass = target.getClass();
-                Method createShadowThreadMethod = targetClass.getMethod("createShadowThread");
-                createShadowThreadMethod.invoke(target);
-            } catch (Exception e) {
-                LOG.error("Failed to invoke createShadowThread via reflection", e);
+        if (!PilotUtil.isDryRun()) {
+            if(ticketDispenser.get() > nextServeId.get()){
+                System.out.println("abort pilot execution");
             }
-            this.lock.lock();
+            delegate.lock();
+            ticketDispenser.incrementAndGet();
+        } else {
+            if (delegate.tryLock()) {
+                delegate.unlock();
+            } else {
+                System.out.println("abort pilot execution");
+                return;
+            }
 
+            long myTicket = ticketDispenser.incrementAndGet();
+            while (nextServeId.get() != myTicket) {
+                Thread.yield();
+            }
         }
     }
 
+    @Override
     public void unlock() {
-        LOG.info("Release DryRun lock");
-        if(PilotUtil.isDryRun()){
-            LOG.info("Release DryRun Lock");
-            this.modifiedByDryRun = true;
+        if (!PilotUtil.isDryRun()) {
+            ticketDispenser.decrementAndGet();
+            delegate.unlock();
+        } else{
+            nextServeId.incrementAndGet();
         }
-        this.lock.unlock();
+    }
+
+    @Override
+    public boolean tryLock() {
+        if(!PilotUtil.isDryRun()){
+            if(ticketDispenser.get() > nextServeId.get()){
+                System.out.println("abort pilot execution");
+            }
+            return delegate.tryLock();
+        } else {
+            long myTicket = ticketDispenser.incrementAndGet();
+            if (nextServeId.get() == myTicket) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    @Override
+    public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
+        if (!PilotUtil.isDryRun()) {
+            return delegate.tryLock(timeout, unit);
+        } else {
+            long myTicket = ticketDispenser.incrementAndGet();
+            if (nextServeId.get() == myTicket) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    @Override
+    public void lockInterruptibly() throws InterruptedException {
+        if (!PilotUtil.isDryRun()) {
+            delegate.lockInterruptibly();
+        } else {
+            long myTicket = ticketDispenser.incrementAndGet();
+            while (nextServeId.get() != myTicket) {
+                Thread.yield();
+            }
+        }
+    }
+
+    @Override
+    public Condition newCondition() {
+        return null;
     }
 }
