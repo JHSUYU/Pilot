@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
@@ -27,6 +28,8 @@ public class PilotUtil
     private static Map<String, HashMap<String, WrapContext>> stateMap = new HashMap();
 
     private static Map<String, HashMap<String, WrapContext>> fieldMap = new HashMap();
+
+    private static final Set<String> dryRunMethods = ConcurrentHashMap.newKeySet();
 
     public static int forkCount = 0;
 
@@ -58,6 +61,36 @@ public class PilotUtil
             dryRunLogger.info(message + " in dry run mode");
         }
     }
+
+    static {
+        Thread monitorThread = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    int size = dryRunMethods.size();
+                    try (FileWriter writer = new FileWriter("/opt/invokedDryRunmethods.txt")) {
+                        writer.write(String.valueOf(size));
+                        writer.write(System.lineSeparator());
+                    } catch (IOException e) {
+                    }
+                    Thread.sleep(30000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+    }
+
+
+    public static boolean isDryRun(String methodSignature){
+        boolean res = Boolean.parseBoolean(Baggage.current().getEntryValue(DRY_RUN_KEY));
+        if(res){
+            dryRunMethods.add(methodSignature);
+        }
+        return res;
+    }
+
 
     public static boolean isDryRun() {
 //        count++;
