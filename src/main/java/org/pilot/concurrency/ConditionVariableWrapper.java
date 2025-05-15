@@ -9,11 +9,12 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
 
 public class ConditionVariableWrapper implements Condition {
     private Condition delegate;
-    private LockWrapper associatedLock;
+    private Lock associatedLock;
 
     private static class WaitNode{
         Thread thread;
@@ -26,7 +27,7 @@ public class ConditionVariableWrapper implements Condition {
 
     private Queue<WaitNode> queue = new ConcurrentLinkedQueue<>();
 
-    public ConditionVariableWrapper(Condition delegate, LockWrapper lock) {
+    public ConditionVariableWrapper(Condition delegate, Lock lock) {
         this.delegate = delegate;
         this.associatedLock = lock;
     }

@@ -8,10 +8,7 @@ import io.opentelemetry.context.Scope;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
@@ -130,6 +127,10 @@ public class PilotUtil
         }else{
             return res;
         }
+    }
+
+    public static UUID getContextKey(Context ctx){
+        return UUID.randomUUID();
     }
 
     public static Scope getDryRunTraceScope(boolean needsDryRunTrace) {

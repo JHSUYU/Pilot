@@ -74,6 +74,34 @@ public class ThreadManager {
         }
     }
 
+    public static void cleanupPhantomThreads(String dryRunId) {
+        List<Thread> threads = phantomThreadMap.get(dryRunId);
+        if (threads != null) {
+            for (Thread thread : threads) {
+                if (thread.isAlive()) {
+                    System.out.println("Interrupting phantom thread: " + thread.getName() + " with ID: " + dryRunId.toString());
+                    thread.interrupt();
+
+                    // 等待一小段时间让中断状态传播
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        // 忽略
+                    }
+
+                    System.out.println("Thread " + thread.getName() + " interrupted status: " + thread.isInterrupted());
+                } else {
+                    System.out.println("Thread " + thread.getName() + " is not alive, cannot interrupt");
+                }
+            }
+            // 在interrupt之后才从map中移除
+            phantomThreadMap.remove(dryRunId);
+            System.out.println("Removed phantom threads for UUID: " + dryRunId.toString());
+            System.out.println("Current phantom thread map: " + phantomThreadMap.toString());
+        }
+    }
+
+
     public static void cleanupPhantomThreads(UUID dryRunId) {
         List<Thread> threads = phantomThreadMap.get(dryRunId);
         if (threads != null) {
