@@ -36,7 +36,18 @@ public class ConditionVariableWrapper implements Condition {
     public void await() throws InterruptedException {
         if(!PilotUtil.isDryRun()){
             queue.add(new WaitNode(Thread.currentThread(), false));
+            if(associatedLock instanceof LockWrapper){
+                ((LockWrapper) associatedLock).delegateIsLocked.set(false);
+            }
             delegate.await();
+            if(associatedLock instanceof LockWrapper){
+                LockWrapper lockWrapper = (LockWrapper) associatedLock;
+                lockWrapper.delegateIsLocked.set(true);
+                if(lockWrapper.ticketDispenser.get() > lockWrapper.nextServeId.get()){
+                    System.out.println("abort pilot execution");
+                    ThreadManager.cleanupPhantomThreads("");
+                }
+            }
         }else{
             Thread me = Thread.currentThread();
             queue.add(new WaitNode(me, true));

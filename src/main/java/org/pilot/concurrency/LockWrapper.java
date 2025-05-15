@@ -73,6 +73,7 @@ public class LockWrapper implements Lock {
             if(delegateIsLocked.get()){
                 return false;
             }
+
             long myTicket = ticketDispenser.getAndIncrement();
             if (nextServeId.get() == myTicket) {
                 pilotCtx = Context.current();
