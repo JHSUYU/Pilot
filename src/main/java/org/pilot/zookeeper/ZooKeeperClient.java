@@ -1,5 +1,6 @@
 package org.pilot.zookeeper;
 
+import io.opentelemetry.context.Context;
 import org.apache.zookeeper.ZooKeeper;
 
 import java.util.ArrayList;
@@ -10,6 +11,7 @@ import java.util.Map;
 import static org.pilot.concurrency.ThreadManager.DRY_RUN_PATH;
 
 import org.apache.zookeeper.ZooKeeper;
+import org.pilot.PilotUtil;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,7 +28,7 @@ public class ZooKeeperClient {
         NODE_CHANGED
     }
 
-    private org.apache.zookeeper.ZooKeeper zk;
+    public org.apache.zookeeper.ZooKeeper zk;
     private String connectionString;
     private static final int SESSION_TIMEOUT = 50000;
 
@@ -190,14 +192,13 @@ public class ZooKeeperClient {
      */
     private void setupChildrenWatcher(String path) {
         try {
-            // 获取当前子节点列表并设置一个新的监视器
+
             List<String> currentChildren = zk.getChildren(path, event -> {
-                // 当子节点变化时调用此回调
+
                 if (event.getType() == org.apache.zookeeper.Watcher.Event.EventType.NodeChildrenChanged) {
                     try {
                         detectChildrenChanges(path);
 
-                        // 重新设置监视器以继续监视
                         setupChildrenWatcher(path);
                     } catch (Exception e) {
                         System.err.println("Error handling NodeChildrenChanged event: " + e.getMessage());
@@ -206,7 +207,6 @@ public class ZooKeeperClient {
                 }
             });
 
-            // 存储当前子节点列表以供后续比较
             pathChildrenMap.put(path, new ArrayList<>(currentChildren));
 
         } catch (Exception e) {
@@ -220,21 +220,16 @@ public class ZooKeeperClient {
      */
     private void detectChildrenChanges(String path) {
         try {
-            // 获取当前子节点列表(没有设置新的监视器，因为setupChildrenWatcher会设置)
             List<String> currentChildren = zk.getChildren(path, false);
 
-            // 获取之前的子节点列表
             List<String> previousChildren = pathChildrenMap.getOrDefault(path, new ArrayList<>());
 
-            // 找出已删除的节点
             List<String> deletedNodes = new ArrayList<>(previousChildren);
             deletedNodes.removeAll(currentChildren);
 
-            // 找出新增的节点
             List<String> addedNodes = new ArrayList<>(currentChildren);
             addedNodes.removeAll(previousChildren);
 
-            // 通知所有已注册的观察者有关已删除的节点
             for (String deletedNode : deletedNodes) {
                 String deletedPath = path + "/" + deletedNode;
                 System.out.println("Detected node deletion: " + deletedPath);
@@ -245,7 +240,6 @@ public class ZooKeeperClient {
                 }
             }
 
-            // 你也可以通知有关新增节点的信息，如果有需要的话
             for (String addedNode : addedNodes) {
                 String addedPath = path + "/" + addedNode;
                 System.out.println("Detected node addition: " + addedPath);

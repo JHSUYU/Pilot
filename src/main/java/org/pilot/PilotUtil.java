@@ -14,8 +14,12 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.pilot.concurrency.ThreadManager;
+import org.pilot.zookeeper.ZooKeeperClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.pilot.concurrency.ThreadManager.generateExecutionIdFromZooKeeper;
 
 public class PilotUtil
 {
@@ -34,6 +38,7 @@ public class PilotUtil
 
     public static boolean verbose = false;
     public static final String DRY_RUN_KEY = "is_dry_run";
+    public static final String PILOT_ID_KEY = "pilot_id";
     public static final String FAST_FORWARD_KEY = "is_fast_forward";
 
     public static final String IS_SHADOW_THREAD_KEY = "is_shadow_thread";
@@ -59,25 +64,25 @@ public class PilotUtil
         }
     }
 
-    static {
-        Thread monitorThread = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    int size = dryRunMethods.size();
-                    try (FileWriter writer = new FileWriter("/opt/invokedDryRunmethods.txt")) {
-                        writer.write(String.valueOf(size));
-                        writer.write(System.lineSeparator());
-                    } catch (IOException e) {
-                    }
-                    Thread.sleep(30000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        });
-        monitorThread.setDaemon(true);
-        monitorThread.start();
-    }
+//    static {
+//        Thread monitorThread = new Thread(() -> {
+//            while (!Thread.currentThread().isInterrupted()) {
+//                try {
+//                    int size = dryRunMethods.size();
+//                    try (FileWriter writer = new FileWriter("/opt/invokedDryRunmethods.txt")) {
+//                        writer.write(String.valueOf(size));
+//                        writer.write(System.lineSeparator());
+//                    } catch (IOException e) {
+//                    }
+//                    Thread.sleep(30000);
+//                } catch (InterruptedException e) {
+//                    Thread.currentThread().interrupt();
+//                }
+//            }
+//        });
+//        monitorThread.setDaemon(true);
+//        monitorThread.start();
+//    }
 
 
     public static boolean isDryRun(String methodSignature){
@@ -391,6 +396,11 @@ public class PilotUtil
         return true;
     }
 
+    public static void addWorkerThread(Thread thread) {
+        sedaWorkerThreads.add(thread);
+        dryRunLog("Added worker thread: " + thread.getName() + ", total threads: " + sedaWorkerThreads.size());
+    }
+
     public static String initNewExec(){
         String executionId = generateExecutionId();
         long startTime = System.currentTimeMillis();
@@ -400,6 +410,148 @@ public class PilotUtil
 
         dryRunLog("Starting pilot execution with ID: " + executionId);
         return executionId;
+    }
+    public static void waitUntilPilotExecutionFinished(Context ctx) {
+        final long TIMEOUT_THRESHOLD = 300000;
+        final long POLL_INTERVAL = 1000;
+
+        try {
+            Baggage baggage = Baggage.fromContext(ctx);
+            if (baggage == null) {
+                dryRunLog("No baggage found in context");
+                return;
+            }
+
+            String pilotId = baggage.getEntryValue(PILOT_ID_KEY);
+            if (pilotId == null || pilotId.isEmpty()) {
+                dryRunLog("No PILOT_ID found in baggage");
+                return;
+            }
+
+            dryRunLog("Waiting for pilot execution to finish: " + pilotId);
+            String pilotNodePath = ThreadManager.PILOT_PATH + "/" + pilotId;
+
+            ZooKeeperClient zkClient = ThreadManager.getZooKeeperClient();
+            if (zkClient == null) {
+                dryRunLog("ZooKeeper client is not available");
+                return;
+            }
+
+            // 检查主节点是否存在
+            if (!zkClient.exists(pilotNodePath)) {
+                dryRunLog("Pilot node doesn't exist: " + pilotId);
+                return;
+            }
+
+            long startTime = System.currentTimeMillis();
+            boolean timeoutReached = false;
+
+
+            while (true) {
+                try {
+                    if (!zkClient.exists(pilotNodePath)) {
+                        dryRunLog("Pilot node was deleted by another process: " + pilotId);
+                        break;
+                    }
+
+                    List<String> children = zkClient.zk.getChildren(pilotNodePath, false);
+
+                    if (children == null || children.isEmpty()) {
+                        dryRunLog("All children removed for pilot node: " + pilotId);
+                        break;
+                    }
+
+                    dryRunLog("Pilot node " + pilotId + " still has " + children.size() + " children: " + children);
+
+                    long elapsedTime = System.currentTimeMillis() - startTime;
+                    if (elapsedTime >= TIMEOUT_THRESHOLD) {
+                        dryRunLog("Timeout reached for pilot execution: " + pilotId +
+                                ", elapsed time: " + elapsedTime + "ms");
+                        timeoutReached = true;
+
+                        break;
+                    }
+
+                    Thread.sleep(POLL_INTERVAL);
+
+                } catch (InterruptedException e) {
+                    dryRunLog("Sleep interrupted: " + e.getMessage());
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (org.apache.zookeeper.KeeperException.NoNodeException e) {
+                    dryRunLog("Pilot node no longer exists: " + pilotId);
+                    break;
+                } catch (Exception e) {
+                    dryRunLog("Error checking pilot node children: " + e.getMessage());
+                    e.printStackTrace();
+                    try {
+                        Thread.sleep(POLL_INTERVAL);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+
+            // 记录执行时间
+            long totalTime = System.currentTimeMillis() - startTime;
+            dryRunLog("Pilot execution " + pilotId + " finished. Total wait time: " +
+                    totalTime + "ms" + (timeoutReached ? " (timeout)" : " (completed)"));
+
+            deletePilotNode(zkClient, pilotNodePath, pilotId);
+
+
+        } catch (Exception e) {
+            dryRunLog("Error in waitUntilPilotExecutionFinished: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 删除pilot节点及其所有子节点
+     */
+    private static void deletePilotNode(ZooKeeperClient zkClient, String pilotNodePath, String pilotId) {
+        try {
+            if (!zkClient.exists(pilotNodePath)) {
+                dryRunLog("Pilot node already deleted: " + pilotId);
+                return;
+            }
+
+            // 先删除所有子节点
+            try {
+                List<String> remainingChildren = zkClient.zk.getChildren(pilotNodePath, false);
+                if (remainingChildren != null && !remainingChildren.isEmpty()) {
+                    dryRunLog("Deleting " + remainingChildren.size() + " remaining children for pilot node: " + pilotId);
+                    for (String child : remainingChildren) {
+                        String childPath = pilotNodePath + "/" + child;
+                        try {
+                            zkClient.delete(childPath);
+                            dryRunLog("Deleted child node: " + childPath);
+                        } catch (Exception e) {
+                            dryRunLog("Error deleting child node " + childPath + ": " + e.getMessage());
+                        }
+                    }
+                }
+            } catch (org.apache.zookeeper.KeeperException.NoNodeException e) {
+                dryRunLog("Pilot node was already deleted: " + pilotId);
+                return;
+            } catch (Exception e) {
+                dryRunLog("Error getting children for deletion: " + e.getMessage());
+            }
+
+            // 删除主节点
+            try {
+                zkClient.delete(pilotNodePath);
+                dryRunLog("Deleted pilot node: " + pilotId);
+            } catch (Exception e) {
+                dryRunLog("Error deleting pilot node: " + e.getMessage());
+                e.printStackTrace();
+            }
+
+        } catch (Exception e) {
+            dryRunLog("Error in deletePilotNode: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     public static void recordTime(long startTime, String path) {
@@ -424,19 +576,18 @@ public class PilotUtil
 
 
     private static final ConcurrentHashMap<String, Long> executionStartTimes = new ConcurrentHashMap<>();
-    private static final AtomicLong executionIdGenerator = new AtomicLong(0);
+    public static final AtomicLong executionIdGenerator = new AtomicLong(0);
+
+    public static List<Thread> sedaWorkerThreads = new ArrayList<>();
 
     public static final String mock = "mock";
 
 
-    /**
-     * 生成唯一的执行ID
-     * @return 生成的执行ID
-     */
     private static String generateExecutionId() {
         long id = executionIdGenerator.incrementAndGet();
         return "PILOT-" + id + "-" + System.nanoTime();
     }
+
 
 
     public static long getExecutionRuntime(String executionId) {

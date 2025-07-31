@@ -7,10 +7,216 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
+
+import com.google.common.collect.*;
+import com.rits.cloning.Cloner;
+import com.rits.cloning.ICloningStrategy;
 
 import static org.pilot.Constants.SHADOW_DIR;
 
 public class State {
+
+    public static final String[] fileSystemClasses = {
+            "sun.nio.fs.UnixPath",
+            "sun.nio.fs.WindowsPath",
+            "sun.nio.fs.UnixFileSystem",
+            "sun.nio.fs.WindowsFileSystem",
+            "sun.nio.fs.UnixFileSystemProvider",
+            "sun.nio.fs.WindowsFileSystemProvider",
+            "java.nio.file.Path",
+            "java.io.File",
+            "java.io.RandomAccessFile",
+            "java.nio.channels.FileChannel",
+            "java.nio.channels.FileLock"
+    };
+
+    public static final String[] luceneDirectoryClasses = {
+            "org.apache.lucene.store.Directory",
+            "org.apache.lucene.store.FSDirectory",
+            "org.apache.lucene.store.MMapDirectory",
+            "org.apache.lucene.store.NIOFSDirectory",
+            "org.apache.lucene.store.SimpleFSDirectory",
+            "org.apache.lucene.store.RAMDirectory",
+            "org.apache.lucene.store.ByteBuffersDirectory",
+            "org.apache.lucene.store.FilterDirectory",
+            "org.apache.lucene.store.TrackingDirectoryWrapper",
+            "org.apache.lucene.store.LockValidatingDirectoryWrapper",
+            "org.apache.lucene.store.Lock",
+            "org.apache.lucene.store.LockFactory",
+            "org.apache.lucene.store.IndexInput",
+            "org.apache.lucene.store.IndexOutput",
+            "org.apache.lucene.store.IOContext"
+    };
+
+    public static final String[] lockingClasses = {
+            "java.util.concurrent.locks.Lock",
+            "java.util.concurrent.locks.ReentrantLock",
+            "java.util.concurrent.locks.ReadWriteLock",
+            "java.util.concurrent.locks.ReentrantReadWriteLock",
+            "java.util.concurrent.Semaphore",
+            "java.util.concurrent.CountDownLatch",
+            "java.util.concurrent.CyclicBarrier",
+            "java.util.concurrent.Phaser",
+            "java.lang.Object", // for synchronized blocks
+            "org.apache.lucene.index.DocumentsWriterFlushQueue",
+            "org.apache.lucene.index.DocumentsWriterDeleteQueue"
+    };
+
+    public static final String[] threadingClasses = {
+            "java.lang.Thread",
+            "java.lang.ThreadGroup",
+            "java.util.concurrent.ThreadPoolExecutor",
+            "java.util.concurrent.ExecutorService",
+            "java.util.concurrent.Executor",
+            "java.util.concurrent.ScheduledExecutorService",
+            "java.util.concurrent.ForkJoinPool",
+            "org.apache.lucene.index.MergeScheduler",
+            "org.apache.lucene.index.ConcurrentMergeScheduler",
+            "org.apache.lucene.index.SerialMergeScheduler"
+    };
+
+    public static final String[] configClasses = {
+            "org.apache.lucene.util.InfoStream",
+            "org.apache.lucene.index.IndexWriterConfig",
+            "org.apache.lucene.index.LiveIndexWriterConfig",
+            "org.apache.lucene.index.MergePolicy",
+            "org.apache.lucene.index.IndexDeletionPolicy",
+            "org.apache.lucene.index.FlushPolicy",
+            "org.apache.lucene.index.FieldInfos$FieldNumbers",
+            "org.apache.lucene.analysis.Analyzer",
+            "org.apache.lucene.codecs.Codec",
+            "org.apache.lucene.search.similarities.Similarity"
+    };
+
+    public static final String[] callbackClasses = {
+            "org.apache.lucene.index.IndexWriter$Event",
+            "org.apache.lucene.index.IndexWriter$EventQueue",
+            "org.apache.lucene.index.IndexWriter$IndexReaderWarmer",
+            "org.apache.lucene.index.SegmentInfos$FindSegmentsFile",
+            "org.apache.lucene.index.IndexReader$CacheHelper",
+            "org.apache.lucene.index.IndexReader$ClosedListener",
+            "org.apache.lucene.index.QueryTimeout",
+            "org.apache.lucene.index.DocumentsWriter$FlushNotifications"
+    };
+
+    public static final String[] poolingClasses = {
+            "org.apache.lucene.index.ReaderPool",
+            "org.apache.lucene.index.ReadersAndUpdates",
+            "org.apache.lucene.index.BufferedUpdatesStream",
+            "org.apache.lucene.index.SegmentReader",
+            //"org.apache.lucene.index.StandardDirectoryReader",
+            "org.apache.lucene.util.Accountable",
+            "org.apache.lucene.util.ByteBlockPool",
+            "org.apache.lucene.util.RecyclingByteBlockAllocator"
+    };
+
+    public static final String[] atomicClasses = {
+            "java.util.concurrent.ConcurrentLinkedQueue",
+            "java.util.concurrent.ConcurrentHashMap"
+    };
+
+    public static final String[] testingClasses = {
+            "com.carrotsearch.randomizedtesting.ThreadLeakControl",
+            "com.carrotsearch.randomizedtesting.RandomizedRunner",
+            "com.carrotsearch.randomizedtesting.rules.StatementAdapter",
+            "org.apache.lucene.util.TestRule",
+            "junit.framework.TestCase"
+    };
+
+
+    public static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(State.class);
+
+    public static Cloner cloner = new Cloner();
+
+
+
+    static {
+
+        for (String[] classArray : new String[][]{
+                fileSystemClasses, luceneDirectoryClasses, lockingClasses,
+                threadingClasses, configClasses, callbackClasses,
+                poolingClasses, atomicClasses, testingClasses}) {
+            for (String className : classArray) {
+                try {
+                    Class<?> clazz = Class.forName(className);
+                    cloner.dontClone(clazz);
+                } catch (ClassNotFoundException e) {
+                    // 类不存在，忽略
+                }
+            }
+        }
+
+        cloner.dontCloneInstanceOf(Function.class);
+        cloner.dontCloneInstanceOf(Runnable.class);
+        cloner.dontCloneInstanceOf(Callable.class);
+        cloner.dontCloneInstanceOf(Consumer.class);
+        cloner.dontCloneInstanceOf(Supplier.class);
+        cloner.dontCloneInstanceOf(Predicate.class);
+
+
+        cloner.registerCloningStrategy(new ICloningStrategy() {
+            @Override
+            public Strategy strategyFor(Object obj, Field field) {
+                if (field == null || field.getType() == null) {
+                    return Strategy.IGNORE;
+                }
+
+                String fieldTypeName = field.getType().getName();
+                String fieldName = field.getName();
+
+
+                // 7. 检查字段值的实际类型
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(obj);
+                    if (value != null) {
+                        String valueClassName = value.getClass().getName();
+
+                        // 文件系统相关
+                        if (valueClassName.startsWith("sun.nio.fs.") ||
+                                valueClassName.startsWith("java.nio.file.") ||
+                                valueClassName.startsWith("org.apache.lucene.store.")) {
+                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                        }
+
+                        if (valueClassName.contains("Lambda") ||
+                                valueClassName.contains("$Lambda") ||
+                                value.getClass().isSynthetic()) {
+                            LOG.debug("Skipping lambda field: {} in class: {}", fieldName, obj.getClass().getName());
+                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                        }
+
+                        if(valueClassName.contains("org.apache.solr")){
+                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                        }
+
+                        // 检查是否是匿名内部类（也可能包含不可克隆的引用）
+                        if (value.getClass().isAnonymousClass()) {
+                            LOG.debug("Skipping anonymous class field: {} in class: {}", fieldName, obj.getClass().getName());
+                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                        }
+
+
+
+                        // 线程相关
+                        if (value instanceof Thread || value instanceof ThreadGroup ||
+                                value instanceof ExecutorService) {
+                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                        }
+                    }
+                } catch (IllegalAccessException e) {
+                    // 忽略访问错误
+                }
+
+                return Strategy.IGNORE;
+            }
+        });
+    }
 
     public static IOManager IOManager = new IOManager();
     public static <T> T shallowCopy(T originalField, T dryRunField, boolean isSet){
@@ -21,9 +227,62 @@ public class State {
         }
     }
 
+    public static <T> T deepCopy(T obj) {
+        return cloner.deepClone(obj);
+    }
+
+    public static <T> boolean workaroundForSolr(T obj){
+        if(obj.getClass().getName().contains("org.apache.lucene.store")){
+            return false;
+        }
+
+        if(obj.getClass().getName().contains("org.apache.lucene")){
+            LOG.info("Workaround for Solr: Using deep copy for object of type: {}", obj.getClass().getName());
+            return true;
+        }
+        return false;
+    }
+
     public static <T> T clone(T obj) {
         if (obj == null) {
             return null;
+        }
+
+
+
+        //if obj instance of AtomicPrimitive, do deep copy
+        if (obj instanceof AtomicInteger) {
+            return (T) new AtomicInteger(((AtomicInteger) obj).get());
+        } else if (obj instanceof AtomicLong) {
+            return (T) new AtomicLong(((AtomicLong) obj).get());
+        } else if (obj instanceof AtomicBoolean) {
+            return (T) new AtomicBoolean(((AtomicBoolean) obj).get());
+        } else if (obj instanceof AtomicReference) {
+            return (T) new AtomicReference<>(((AtomicReference<?>) obj).get());
+        }
+
+        if(workaroundForSolr(obj)){
+            //print stack trace
+            for(StackTraceElement element : Thread.currentThread().getStackTrace()) {
+                LOG.info("Workaround for Solr: Stack trace: {}", element);
+            }
+            // catch the throwable from deepCopy, if throwable, just return obj
+            try {
+                return deepCopy(obj);
+            } catch (Throwable e) {
+                LOG.error("Failed to deep copy object of type: {}", obj.getClass().getName(), e);
+                return obj; // Return original object if deep copy fails
+            }
+        }
+
+
+        if (obj instanceof java.util.Properties){
+            java.util.Properties originalProperties = (java.util.Properties) obj;
+            java.util.Properties clonedProperties = new java.util.Properties();
+            for (String key : originalProperties.stringPropertyNames()) {
+                clonedProperties.setProperty(key, originalProperties.getProperty(key));
+            }
+            return (T) clonedProperties;
         }
 
         if (obj instanceof Set) {
@@ -78,6 +337,13 @@ public class State {
             return null;
         }
 
+        if (original instanceof ImmutableSortedSet) {
+            ImmutableSortedSet<E> sortedSet = (ImmutableSortedSet<E>) original;
+            return ImmutableSortedSet.copyOf(sortedSet.comparator(), sortedSet);
+        } else if (original instanceof ImmutableSet) {
+            return ImmutableSet.copyOf(original);
+        }
+
         if (original instanceof TreeSet) {
             TreeSet<E> originalTS = (TreeSet<E>) original;
             TreeSet<E> newTS = new TreeSet<>(originalTS.comparator());
@@ -113,6 +379,17 @@ public class State {
             return null;
         }
 
+        if (original instanceof ImmutableBiMap) {
+            return ImmutableBiMap.copyOf(original);
+        } else if (original instanceof ImmutableSortedMap) {
+            return ImmutableSortedMap.copyOf((ImmutableSortedMap<K, V>) original);
+        } else if (original instanceof ImmutableMap) {
+            return ImmutableMap.copyOf(original);
+        }
+
+        // handle java.util map types
+
+
         if (original instanceof TreeMap) {
             return new TreeMap<>(original);
         } else if (original instanceof LinkedHashMap) {
@@ -137,7 +414,7 @@ public class State {
         } else if (original instanceof WeakHashMap) {
             return new WeakHashMap<>(original);
         } else {
-            System.out.println("Failure Recovery: DryRunManager.java: cloneMap: unknown type");
+            System.out.println("Failure Recovery: DryRunManager.java: cloneMap: unknown type " + original.getClass().getName());
             // For unknown types, including Collections.unmodifiableMap,
             // Collections.synchronizedMap, etc., we use HashMap
             return new HashMap<>(original);
@@ -147,6 +424,18 @@ public class State {
     private static <E> Queue<E> cloneQueue(Queue<E> original) {
         if (original == null) {
             return null;
+        }
+
+        if (original instanceof MinMaxPriorityQueue) {
+            MinMaxPriorityQueue<E> mmQueue = (MinMaxPriorityQueue<E>) original;
+            MinMaxPriorityQueue<E> newQueue = (MinMaxPriorityQueue<E>) MinMaxPriorityQueue.create();
+            newQueue.addAll(mmQueue);
+            return newQueue;
+        } else if (original instanceof EvictingQueue) {
+            EvictingQueue<E> evictingQueue = (EvictingQueue<E>) original;
+            EvictingQueue<E> newQueue = EvictingQueue.create(evictingQueue.remainingCapacity() + evictingQueue.size());
+            newQueue.addAll(evictingQueue);
+            return newQueue;
         }
 
         if (original instanceof PriorityQueue) {
@@ -179,6 +468,20 @@ public class State {
     private static <E> List<E> cloneList(List<E> original) {
         if (original == null) {
             return null;
+        }
+
+        if (original instanceof ImmutableList) {
+            return ImmutableList.copyOf(original);
+        }
+        //if java.util.Vector
+        if (original instanceof Stack){
+            //put original to stack
+            Stack<E> stack = new Stack<>();
+            stack.addAll(original);
+            return stack;
+        }
+        if (original instanceof Vector) {
+            return new Vector<>(original);
         }
 
         if (original instanceof LinkedList) {
