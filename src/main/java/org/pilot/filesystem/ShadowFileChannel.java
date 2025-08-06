@@ -357,30 +357,44 @@ public class ShadowFileChannel extends FileChannel {
             return FileChannel.open(originalPath, options);
         }
         PilotUtil.dryRunLog("ShadowFileChannel.open"+originalPath.toString());
+        PilotUtil.dryRunLog("Initializing ShadowFileSystem from original root");
+        for(StackTraceElement e : Thread.currentThread().getStackTrace()) {
+            PilotUtil.dryRunLog(e.toString());
+        }
         ShadowFileSystem.initializeFromOriginal();
         Path absOriginal = originalPath.toAbsolutePath();
 
         Path shadowFile = ShadowFileSystem.resolveShadowFSPath(absOriginal);
         boolean exist = Files.exists(shadowFile);
         if (!exist){
-            PilotUtil.dryRunLog("create file"+shadowFile.toString());
-            Files.createFile(shadowFile);
+            // 先确保父目录存在
+            Path parentDir = shadowFile.getParent();
+            if (parentDir != null && !Files.exists(parentDir)) {
+                PilotUtil.dryRunLog("Creating parent directories: " + parentDir.toString());
+                Files.createDirectories(parentDir);
+            }
         }
 
-        OpenOption[] newOptions = Arrays.stream(options)
-                .filter(opt -> opt != StandardOpenOption.CREATE_NEW)
-                .toArray(OpenOption[]::new);
+        OpenOption[] newOptions = options;
+        if (exist) {
+            newOptions = Arrays.stream(options)
+                    .filter(opt -> opt != StandardOpenOption.CREATE && opt != StandardOpenOption.CREATE_NEW)
+                    .toArray(OpenOption[]::new);
+            PilotUtil.dryRunLog("File exists, removed CREATE/CREATE_NEW options");
+        }
 
         FileChannel fileChannel = FileChannel.open(shadowFile, newOptions);
 
         ShadowFileState shadowFileState = fileEntries.get(absOriginal);
         if(shadowFileState == null){
+            PilotUtil.dryRunLog("create new shadowFileState for "+absOriginal.toAbsolutePath());
             shadowFileState = new ShadowFileState(absOriginal, ShadowFileSystem.shadowBaseDir);
             shadowFileState.existBeforePilot = false;
             shadowFileState.reconstructedPath = shadowFile;
             shadowFileState.setAppendLogPath(ShadowFileSystem.resolveShadowFSAppendLogFilePath(absOriginal));
             fileEntries.put(absOriginal, shadowFileState);
         } else {
+            PilotUtil.dryRunLog("get existing shadowFileState for "+absOriginal.toAbsolutePath());
             if(shadowFileState.existBeforePilot){
                 shadowFileState.existBeforePilot = exist;
             }
@@ -392,7 +406,34 @@ public class ShadowFileChannel extends FileChannel {
         ShadowFileChannel res = new ShadowFileChannel(fileChannel, shadowFileState);
         if(!shadowFileState.existBeforePilot){
             PilotUtil.dryRunLog("return normal fileChannel with path"+shadowFile.toAbsolutePath());
-            return fileChannel;
+            //copy original file content to shadow file
+            Path parentDir = shadowFile.getParent();
+            if (parentDir != null && !Files.exists(parentDir)) {
+                PilotUtil.dryRunLog("Creating parent directories: " + parentDir.toString());
+                Files.createDirectories(parentDir);
+            }
+
+            if(Files.exists(shadowFile)){
+                PilotUtil.dryRunLog("Shadow file already exists, no need to copy original file content.");
+                newOptions = Arrays.stream(newOptions)
+                        .filter(opt -> opt != StandardOpenOption.CREATE_NEW)
+                        .toArray(OpenOption[]::new);
+            } else {
+                PilotUtil.dryRunLog("Shadow file does not exist, ensuring CREATE option is present.");
+                boolean hasCreate = Arrays.stream(newOptions)
+                        .anyMatch(opt -> opt == StandardOpenOption.CREATE || opt == StandardOpenOption.CREATE_NEW);
+
+                if (!hasCreate) {
+                    PilotUtil.dryRunLog("Adding CREATE option to newOptions.");
+                    OpenOption[] tempOptions = new OpenOption[newOptions.length + 1];
+                    System.arraycopy(newOptions, 0, tempOptions, 0, newOptions.length);
+                    tempOptions[newOptions.length] = StandardOpenOption.CREATE;
+                    newOptions = tempOptions;
+                }
+            }
+
+
+            return FileChannel.open(shadowFile, newOptions);
         }
         res.options = newOptions;
         return res;
@@ -412,6 +453,8 @@ public class ShadowFileChannel extends FileChannel {
         shadowFileState.recordOperation(operation);
         return data.length;
     }
+
+
 
 
 }

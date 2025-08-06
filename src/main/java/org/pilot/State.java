@@ -220,11 +220,12 @@ public class State {
 
     public static IOManager IOManager = new IOManager();
     public static <T> T shallowCopy(T originalField, T dryRunField, boolean isSet){
-        if (isSet) {
-            return dryRunField;
-        } else {
-            return clone(originalField);
-        }
+//        if (isSet) {
+//            return dryRunField;
+//        } else {
+//            return clone(originalField);
+//        }
+        return originalField;
     }
 
     public static <T> T deepCopy(T obj) {
@@ -337,6 +338,7 @@ public class State {
             return null;
         }
 
+        // Handle Guava immutable sets
         if (original instanceof ImmutableSortedSet) {
             ImmutableSortedSet<E> sortedSet = (ImmutableSortedSet<E>) original;
             return ImmutableSortedSet.copyOf(sortedSet.comparator(), sortedSet);
@@ -344,25 +346,64 @@ public class State {
             return ImmutableSet.copyOf(original);
         }
 
-        if (original instanceof TreeSet) {
-            TreeSet<E> originalTS = (TreeSet<E>) original;
-            TreeSet<E> newTS = new TreeSet<>(originalTS.comparator());
+        // Handle NavigableSet implementations (must come before SortedSet)
+        if (original instanceof NavigableSet) {
+            NavigableSet<E> navigableSet = (NavigableSet<E>) original;
+
+            if (original instanceof TreeSet) {
+                TreeSet<E> originalTS = (TreeSet<E>) original;
+                TreeSet<E> newTS = new TreeSet<>(originalTS.comparator());
+                newTS.addAll(original);
+                return newTS;
+            } else if (original instanceof ConcurrentSkipListSet) {
+                ConcurrentSkipListSet<E> originalCSLS = (ConcurrentSkipListSet<E>) original;
+                ConcurrentSkipListSet<E> newCSLS = new ConcurrentSkipListSet<>(originalCSLS.comparator());
+                newCSLS.addAll(original);
+                return newCSLS;
+            } else {
+                // For other NavigableSet implementations, use TreeSet
+                TreeSet<E> newTS = new TreeSet<>(navigableSet.comparator());
+                newTS.addAll(original);
+                return newTS;
+            }
+        }
+
+        // Handle SortedSet (but not NavigableSet)
+        if (original instanceof SortedSet) {
+            SortedSet<E> sortedSet = (SortedSet<E>) original;
+            TreeSet<E> newTS = new TreeSet<>(sortedSet.comparator());
             newTS.addAll(original);
             return newTS;
-        } else if (original instanceof ConcurrentSkipListSet) {
-            ConcurrentSkipListSet<E> originalCSLS = (ConcurrentSkipListSet<E>) original;
-            ConcurrentSkipListSet<E> newCSLS = new ConcurrentSkipListSet<>(originalCSLS.comparator());
-            newCSLS.addAll(original);
-            return newCSLS;
-        } else if (original instanceof LinkedHashSet) {
+        }
+
+        // Handle other Set implementations
+        if (original instanceof LinkedHashSet) {
             return new LinkedHashSet<>(original);
         } else if (original instanceof CopyOnWriteArraySet) {
             return new CopyOnWriteArraySet<>(original);
         } else if (original instanceof HashSet) {
             return new HashSet<>(original);
+        } else if (original instanceof EnumSet) {
+            // Handle EnumSet specially
+            @SuppressWarnings("unchecked")
+            EnumSet<? extends Enum<?>> enumSet = (EnumSet<? extends Enum<?>>) original;
+            return (Set<E>) EnumSet.copyOf(enumSet);
         } else {
             // For unknown types, including Collections.unmodifiableSet,
-            // Collections.synchronizedSet, etc., we return a new HashSet
+            // Collections.synchronizedSet, etc.
+            // Try to preserve ordering if possible
+            try {
+                // Check if it's actually a NavigableSet wrapped by Collections.unmodifiableSet
+                if (original.getClass().getName().contains("UnmodifiableNavigableSet") ||
+                        original.getClass().getName().contains("SynchronizedNavigableSet")) {
+                    // Use TreeSet to preserve navigation capabilities
+                    return new TreeSet<>(original);
+                }
+            } catch (Exception e) {
+                // Ignore and fall back to HashSet
+            }
+
+            // Default to HashSet for unknown types
             return new HashSet<>(original);
         }
     }
@@ -374,11 +415,28 @@ public class State {
         return new EnumMap<>(original);
     }
 
+    public static boolean workaroundForCA(Object obj) {
+        if (obj.getClass().getName().contains("org.apache.cassandra")) {
+            LOG.info("Workaround for Cassandra: Using deep copy for object of type: {}", obj.getClass().getName());
+            return true;
+        }
+        return false;
+    }
+
     private static <K, V> Map<K, V> cloneMap(Map<K, V> original) {
         if (original == null) {
             return null;
         }
 
+        if(original.getClass().getName().contains("org.cliffc.high_scale_lib.NonBlockingHashMap")){
+            return original;
+        }
+
+        if(workaroundForCA(original)){
+            return original;
+        }
+
+        // Handle Guava immutable maps
         if (original instanceof ImmutableBiMap) {
             return ImmutableBiMap.copyOf(original);
         } else if (original instanceof ImmutableSortedMap) {
@@ -387,36 +445,101 @@ public class State {
             return ImmutableMap.copyOf(original);
         }
 
-        // handle java.util map types
+        // Handle BiMap implementations
+        if (original instanceof BiMap) {
+            BiMap<K, V> biMap = (BiMap<K, V>) original;
+            if (biMap instanceof HashBiMap) {
+                return HashBiMap.create(biMap);
+            } else if (biMap instanceof EnumBiMap) {
+                // EnumBiMap requires special handling with proper type bounds
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                EnumBiMap<?, ?> enumBiMap = (EnumBiMap) biMap;
+                return (Map<K, V>) EnumBiMap.create(enumBiMap);
+            } else if (biMap instanceof EnumHashBiMap) {
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                EnumHashBiMap<?, ?> enumHashBiMap = (EnumHashBiMap) biMap;
+                return (Map<K, V>) EnumHashBiMap.create(enumHashBiMap);
+            } else {
+                // For other BiMap implementations, use HashBiMap
+                return HashBiMap.create(biMap);
+            }
+        }
 
+        // Handle NavigableMap implementations (must come before SortedMap)
+        if (original instanceof NavigableMap) {
+            NavigableMap<K, V> navigableMap = (NavigableMap<K, V>) original;
 
-        if (original instanceof TreeMap) {
-            return new TreeMap<>(original);
-        } else if (original instanceof LinkedHashMap) {
-            return new LinkedHashMap<>(original);
-        } else if (original instanceof ConcurrentHashMap) {
+            if (original instanceof TreeMap) {
+                TreeMap<K, V> treeMap = (TreeMap<K, V>) original;
+                return new TreeMap<>(treeMap);
+            } else if (original instanceof ConcurrentSkipListMap) {
+                ConcurrentSkipListMap<K, V> skipListMap = (ConcurrentSkipListMap<K, V>) original;
+                ConcurrentSkipListMap<K, V> newMap = new ConcurrentSkipListMap<>(skipListMap.comparator());
+                newMap.putAll(original);
+                return newMap;
+            } else {
+                // For other NavigableMap implementations, use TreeMap
+                TreeMap<K, V> newMap = new TreeMap<>(navigableMap.comparator());
+                newMap.putAll(original);
+                return newMap;
+            }
+        }
+
+        // Handle SortedMap (but not NavigableMap)
+        if (original instanceof SortedMap) {
+            SortedMap<K, V> sortedMap = (SortedMap<K, V>) original;
+            TreeMap<K, V> newMap = new TreeMap<>(sortedMap.comparator());
+            newMap.putAll(original);
+            return newMap;
+        }
+
+        // Handle ConcurrentMap implementations
+        if (original instanceof ConcurrentHashMap) {
             return new ConcurrentHashMap<>(original);
         } else if (original instanceof ConcurrentMap) {
+            // For other ConcurrentMap implementations
             return new ConcurrentHashMap<>(original);
+        }
+
+        // Handle other java.util map types
+        if (original instanceof LinkedHashMap) {
+            return new LinkedHashMap<>(original);
         } else if (original instanceof EnumMap) {
             @SuppressWarnings("unchecked")
             EnumMap<? extends Enum<?>, V> enumMap = (EnumMap<? extends Enum<?>, V>) original;
             return cloneEnumMap((EnumMap) enumMap);
-        } else if (original instanceof ConcurrentSkipListMap) {
-            ConcurrentSkipListMap<K, V> originalCSLM = (ConcurrentSkipListMap<K, V>) original;
-            ConcurrentSkipListMap<K, V> newCSLM = new ConcurrentSkipListMap<>(originalCSLM.comparator());
-            for (Map.Entry<K, V> entry : original.entrySet()) {
-                newCSLM.put(entry.getKey(), entry.getValue());
-            }
-            return newCSLM;
         } else if (original instanceof IdentityHashMap) {
             return new IdentityHashMap<>(original);
         } else if (original instanceof WeakHashMap) {
             return new WeakHashMap<>(original);
+        } else if (original instanceof HashMap) {
+            return new HashMap<>(original);
+        } else if (original instanceof Hashtable) {
+            return new Hashtable<>(original);
         } else {
-            System.out.println("Failure Recovery: DryRunManager.java: cloneMap: unknown type " + original.getClass().getName());
             // For unknown types, including Collections.unmodifiableMap,
-            // Collections.synchronizedMap, etc., we use HashMap
+            // Collections.synchronizedMap, etc.
+
+            // Try to detect wrapped NavigableMap or SortedMap
+            try {
+                String className = original.getClass().getName();
+                if (className.contains("UnmodifiableNavigableMap") ||
+                        className.contains("SynchronizedNavigableMap") ||
+                        className.contains("CheckedNavigableMap")) {
+                    // Use TreeMap to preserve navigation capabilities
+                    return new TreeMap<>(original);
+                } else if (className.contains("UnmodifiableSortedMap") ||
+                        className.contains("SynchronizedSortedMap") ||
+                        className.contains("CheckedSortedMap")) {
+                    // Use TreeMap to preserve sorting capabilities
+                    return new TreeMap<>(original);
+                }
+            } catch (Exception e) {
+                // Ignore and fall back to HashMap
+            }
+
+            System.out.println("Failure Recovery: DryRunManager.java: cloneMap: unknown type " + original.getClass().getName());
+            // Default to HashMap for unknown types
             return new HashMap<>(original);
         }
     }

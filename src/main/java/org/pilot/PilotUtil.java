@@ -34,7 +34,7 @@ public class PilotUtil
 
     public static int forkCount = 0;
 
-    public static boolean debug = true;
+    public static boolean debug = false;
 
     public static boolean verbose = false;
     public static final String DRY_RUN_KEY = "is_dry_run";
@@ -604,6 +604,7 @@ public class PilotUtil
             Exception e = new Exception("Dry run mode is enabled, printing stack trace");
             e.printStackTrace();
         }
+
     }
 
 

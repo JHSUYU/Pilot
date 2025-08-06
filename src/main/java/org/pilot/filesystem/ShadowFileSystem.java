@@ -19,23 +19,23 @@ public class ShadowFileSystem {
     public static final Set<Path> deletedFiles = new HashSet<>();
 
     // shadow 文件存放的根目录，本示例中设为当前目录下的 "shadow" 文件夹
-    public static Path shadowBaseDir = Paths.get("/opt/ShadowDirectory");
-
-    public static Path shadowAppendLogDir = Paths.get("/opt/ShadowAppendLog");
-
-    public static Path originalRoot = Paths.get("/opt/cassandra_data");
-
-//    public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowDirectory");
+//    public static Path shadowBaseDir = Paths.get("/opt/ShadowDirectory");
 //
-//    public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowAppendLog");
+//    public static Path shadowAppendLogDir = Paths.get("/opt/ShadowAppendLog");
 //
-//    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/TempDir");
+//    public static Path originalRoot = Paths.get("/opt/cassandra_data");
+
+    public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowDirectory");
+
+    public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowAppendLog");
+
+    public static Path originalRoot = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/TempDir");
 
     public ShadowFileSystem(Path shadowBaseDir) throws IOException {
         assert shadowBaseDir != null;
-        if (!Files.exists(shadowBaseDir)) {
-            Files.createDirectories(shadowBaseDir);
-        }
+//        if (!Files.exists(shadowBaseDir)) {
+//            Files.createDirectories(shadowBaseDir);
+//        }
     }
 
     /**
@@ -54,6 +54,7 @@ public class ShadowFileSystem {
         if(Files.exists(shadowBaseDir)){
             return;
         }
+        //print stack trace
         Files.createDirectories(shadowBaseDir);
         Files.createDirectories(shadowAppendLogDir);
 
@@ -97,9 +98,9 @@ public class ShadowFileSystem {
         PilotUtil.dryRunLog("relativePath: " + relativePath);
         Path shadowPath = shadowBaseDir.resolve(relativePath);
         PilotUtil.dryRunLog("shadowPath: " + shadowPath);
-        if (!Files.exists(shadowPath.getParent())) {
-            Files.createDirectories(shadowPath.getParent());
-        }
+//        if (!Files.exists(shadowPath.getParent())) {
+//            Files.createDirectories(shadowPath.getParent());
+//        }
         return shadowPath;
     }
 
@@ -120,9 +121,9 @@ public class ShadowFileSystem {
         Path shadowPath = shadowBaseDir.resolve(relativePath);
         PilotUtil.dryRunLog("shadowPath: " + shadowPath);
 
-        if (!Files.exists(shadowPath.getParent())) {
-            Files.createDirectories(shadowPath.getParent());
-        }
+//        if (!Files.exists(shadowPath.getParent())) {
+//            Files.createDirectories(shadowPath.getParent());
+//        }
 
         return shadowPath.toString();
     }
