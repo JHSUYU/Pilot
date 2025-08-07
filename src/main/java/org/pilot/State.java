@@ -187,7 +187,7 @@ public class State {
                         if (valueClassName.contains("Lambda") ||
                                 valueClassName.contains("$Lambda") ||
                                 value.getClass().isSynthetic()) {
-                            LOG.debug("Skipping lambda field: {} in class: {}", fieldName, obj.getClass().getName());
+                            //LOG.debug("Skipping lambda field: {} in class: {}", fieldName, obj.getClass().getName());
                             return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
                         }
 
@@ -197,7 +197,7 @@ public class State {
 
                         // 检查是否是匿名内部类（也可能包含不可克隆的引用）
                         if (value.getClass().isAnonymousClass()) {
-                            LOG.debug("Skipping anonymous class field: {} in class: {}", fieldName, obj.getClass().getName());
+                            //LOG.debug("Skipping anonymous class field: {} in class: {}", fieldName, obj.getClass().getName());
                             return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
                         }
 
@@ -220,12 +220,11 @@ public class State {
 
     public static IOManager IOManager = new IOManager();
     public static <T> T shallowCopy(T originalField, T dryRunField, boolean isSet){
-//        if (isSet) {
-//            return dryRunField;
-//        } else {
-//            return clone(originalField);
-//        }
-        return originalField;
+        if (isSet) {
+            return dryRunField;
+        } else {
+            return clone(originalField);
+        }
     }
 
     public static <T> T deepCopy(T obj) {
@@ -243,6 +242,7 @@ public class State {
         }
         return false;
     }
+
 
     public static <T> T clone(T obj) {
         if (obj == null) {
@@ -268,6 +268,15 @@ public class State {
                 LOG.info("Workaround for Solr: Stack trace: {}", element);
             }
             // catch the throwable from deepCopy, if throwable, just return obj
+            try {
+                return deepCopy(obj);
+            } catch (Throwable e) {
+                LOG.error("Failed to deep copy object of type: {}", obj.getClass().getName(), e);
+                return obj; // Return original object if deep copy fails
+            }
+        }
+
+        if(workaroundForCA(obj)){
             try {
                 return deepCopy(obj);
             } catch (Throwable e) {
@@ -415,9 +424,8 @@ public class State {
         return new EnumMap<>(original);
     }
 
-    public static boolean workaroundForCA(Object obj) {
-        if (obj.getClass().getName().contains("org.apache.cassandra")) {
-            LOG.info("Workaround for Cassandra: Using deep copy for object of type: {}", obj.getClass().getName());
+    public static<T> boolean workaroundForCA(T obj) {
+        if(obj.getClass().getName().contains("com.codahale.metrics")){
             return true;
         }
         return false;
@@ -432,7 +440,7 @@ public class State {
             return original;
         }
 
-        if(workaroundForCA(original)){
+        if(!workaroundForCA(original)){
             return original;
         }
 

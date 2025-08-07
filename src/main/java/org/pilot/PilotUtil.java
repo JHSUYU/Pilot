@@ -36,7 +36,7 @@ public class PilotUtil
 
     public static boolean debug = false;
 
-    public static boolean verbose = false;
+    public static boolean verbose = true;
     public static final String DRY_RUN_KEY = "is_dry_run";
     public static final String PILOT_ID_KEY = "pilot_id";
     public static final String FAST_FORWARD_KEY = "is_fast_forward";

@@ -4,59 +4,74 @@ import org.pilot.PilotUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import static org.pilot.PilotUtil.debug;
 import static org.pilot.filesystem.ShadowFileSystem.shadowBaseDir;
 
-public class ShadowFile{
+public class ShadowFile {
     private String fileName;
     private String filePath;
     private long fileSize;
     private long lastModifiedTime;
 
+    public static File initFile(File parent, String child) {
+        GlobalLockManager.lock();
+        try {
+            if (debug || !PilotUtil.isDryRun()) {
+                return new File(parent, child);
+            }
 
-    public static File initFile(File parent, String child){
-        if(debug || !PilotUtil.isDryRun()){
-            return new File(parent, child);
+            try {
+                ShadowFileSystem.initializeFromOriginal();
+                Path originalFilePath = Paths.get(parent.getAbsolutePath(), child);
+
+                PilotUtil.dryRunLog("Original file path: " + originalFilePath.toString());
+
+                Path shadowFilePath = ShadowFileSystem.resolveShadowFSPath(originalFilePath);
+
+                PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
+                return shadowFilePath.toFile();
+            } catch (IOException e) {
+                PilotUtil.dryRunLog("Error1 initializing ShadowFileSystem: " + e.getMessage() + e);
+            }
+            return null;
+        } finally {
+            GlobalLockManager.unlock();
         }
-
-        try{
-
-            ShadowFileSystem.initializeFromOriginal();
-            Path originalFilePath = Paths.get(parent.getAbsolutePath(), child);
-
-            PilotUtil.dryRunLog("Original file path: " + originalFilePath.toString());
-
-            Path shadowFilePath = ShadowFileSystem.resolveShadowFSPath(originalFilePath);
-            PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
-            return shadowFilePath.toFile();
-        }catch(IOException e){
-            PilotUtil.dryRunLog("Error initializing ShadowFileSystem: " + e.getMessage() + e);
-        }
-        return null;
     }
 
-    public static File initFile(String pathname){
-        if(debug || !PilotUtil.isDryRun()){
-            return new File(pathname);
-        }
+    public static File initFile(String pathname) {
+        GlobalLockManager.lock();
+        try {
+            if (debug || !PilotUtil.isDryRun()) {
+                return new File(pathname);
+            }
 
-        try{
-            ShadowFileSystem.initializeFromOriginal();
+            try {
+                String shadowFilePath = ShadowFileSystem.getShadowFSPathString(pathname);
 
-            String shadowFilePath = ShadowFileSystem.getShadowFSPathString(pathname);
-            PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath.toString());
-            return new File(shadowFilePath);
-        }catch(IOException e){
-            PilotUtil.dryRunLog("Error initializing ShadowFileSystem: " + e.getMessage() + e);
+                File shadowFile = new File(shadowFilePath);
+                if (!shadowFile.exists() && !Files.exists(shadowBaseDir)) {
+                    PilotUtil.dryRunLog("Shadow file does not exist, initializing ShadowFileSystem.");
+                    ShadowFileSystem.initializeFromOriginal();
+                }
+
+                PilotUtil.dryRunLog("Shadow file path: " + shadowFilePath);
+                return shadowFile;
+            } catch (IOException e) {
+                PilotUtil.dryRunLog("Error2 initializing ShadowFileSystem: " + e.getMessage() + e);
+            }
+            return null;
+        } finally {
+            GlobalLockManager.unlock();
         }
-        return null;
     }
 
     public ShadowFile(File parent, String child) {
-
+        // Constructor implementation
     }
 
     public String getFileName() {
