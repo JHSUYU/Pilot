@@ -24,7 +24,9 @@ public class ThreadManager {
 
     public static final String DRY_RUN_PATH = "/dry-run";
 
-    public static final String PILOT_PATH = "/pilot";
+    public static final String PILOT_ID_MAX_PATH = "/pilot-id-max";
+
+    public static final String PILOT_PATH = "/pilot-id";
 
     public static final String mockID = "00000000-0000-0000-0000-000000000000";
 
@@ -51,7 +53,7 @@ public class ThreadManager {
                     System.out.println("Pilot node deleted: " + nodeName);
 
                     try {
-                        Long.parseLong(nodeName);
+                        Integer.parseInt(nodeName);
 
                         cleanupPhantomThreads(nodeName);
                         cleanupPhantomFutures(nodeName);
@@ -186,75 +188,55 @@ public class ThreadManager {
 
 
 
-    public static void registerNode() {
-        try {
-            // Create a node with UUID "0" under the dry-run path
-            UUID fixedUuid = UUID.fromString(mockID);
-            String nodePath = DRY_RUN_PATH + "/" + fixedUuid.toString();
-
-            // Check if the node already exists before creating
-            if (!zooKeeperClient.exists(nodePath)) {
-                zooKeeperClient.createRecursive(nodePath);
-                System.out.println("Registered node: " + nodePath);
-            } else {
-                System.out.println("Node already exists: " + nodePath);
-            }
-        } catch (Exception e) {
-            System.err.println("Failed to register node: " + e.getMessage());
-        }
-    }
-
-    public static String generateExecutionIdFromZooKeeper() {
+    public static String generatePilotIdFromZooKeeper() {
         try {
             ZooKeeperClient zkClient = getZooKeeperClient();
 
             if (zkClient == null || zkClient.zk == null ||
                     zkClient.zk.getState() != org.apache.zookeeper.ZooKeeper.States.CONNECTED) {
                 dryRunLog("ZooKeeper client not connected, falling back to local ID generation");
-                return null;
+                return String.valueOf(executionIdGenerator.incrementAndGet());
             }
 
-            if (!zkClient.exists(ThreadManager.PILOT_PATH)) {
-                zkClient.createRecursive(ThreadManager.PILOT_PATH);
-                dryRunLog("Created PILOT_PATH: " + ThreadManager.PILOT_PATH);
-            }
+            String pilotIdMaxPath = "/pilot-id-max";
 
-            List<String> existingNodes = zkClient.zk.getChildren(ThreadManager.PILOT_PATH, false);
+            // 确保路径存在
+            if (!zkClient.exists(pilotIdMaxPath)) {
+                // 第一次使用，创建节点并设置值为1
+                zkClient.create(pilotIdMaxPath, "1".getBytes());
 
-            long maxId = 0;
-
-            for (String node : existingNodes) {
-                try {
-                    long id = Long.parseLong(node);
-                    maxId = Math.max(maxId, id);
-                } catch (NumberFormatException e) {
-                    dryRunLog("Ignoring non-numeric node: " + node);
+                // 创建对应的pilot节点
+                String nodePath = PILOT_PATH + "/1";
+                if (!zkClient.exists(PILOT_PATH)) {
+                    zkClient.createRecursive(PILOT_PATH);
                 }
+                zkClient.create(nodePath);
+
+                dryRunLog("Initialized pilot ID system, allocated ID: 1");
+                return "1";
             }
 
-            long newId = maxId + 1;
+            // 读取当前最大值
+            byte[] data = zkClient.zk.getData(pilotIdMaxPath, false, null);
+            String currentMaxStr = new String(data);
+            long currentMax = Long.parseLong(currentMaxStr);
 
-            int maxRetries = 10;
-            for (int i = 0; i < maxRetries; i++) {
-                String candidateId = String.valueOf(newId + i);
-                String nodePath = ThreadManager.PILOT_PATH + "/" + candidateId;
+            // 新ID为当前最大值+1
+            long newId = currentMax + 1;
+            String newIdStr = String.valueOf(newId);
 
-                try {
-                    if (!zkClient.exists(nodePath)) {
-                        zkClient.create(nodePath);
-                        dryRunLog("Successfully allocated execution ID: " + candidateId);
-                        return candidateId;
-                    }
-                } catch (Exception e) {
-                    dryRunLog("ID " + candidateId + " already exists, trying next...");
-                }
+            // 更新最大值节点
+            zkClient.zk.setData(pilotIdMaxPath, newIdStr.getBytes(), -1);
+
+            // 创建对应的pilot节点
+            String nodePath = PILOT_PATH + "/" + newIdStr;
+            if (!zkClient.exists(PILOT_PATH)) {
+                zkClient.createRecursive(PILOT_PATH);
             }
+            zkClient.create(nodePath);
 
-            String fallbackId = newId + "_" + System.currentTimeMillis();
-            String fallbackPath = ThreadManager.PILOT_PATH + "/" + fallbackId;
-            zkClient.create(fallbackPath);
-            dryRunLog("Used fallback execution ID: " + fallbackId);
-            return fallbackId;
+            dryRunLog("Successfully allocated execution ID: " + newIdStr);
+            return newIdStr;
 
         } catch (Exception e) {
             dryRunLog("Error generating execution ID from ZooKeeper: " + e.getMessage());

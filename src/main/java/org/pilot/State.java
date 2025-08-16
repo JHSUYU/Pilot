@@ -219,13 +219,14 @@ public class State {
     }
 
     public static IOManager IOManager = new IOManager();
-    public static <T> T shallowCopy(T originalField, T dryRunField, boolean isSet){
-        if (isSet) {
+    public static <T> T shallowCopy(T originalField, T dryRunField, boolean needsSet){
+        if (!needsSet) {
             return dryRunField;
         } else {
             return clone(originalField);
         }
     }
+
 
     public static <T> T deepCopy(T obj) {
         return cloner.deepClone(obj);

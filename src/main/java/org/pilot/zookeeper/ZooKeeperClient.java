@@ -104,6 +104,22 @@ public class ZooKeeperClient {
         }
     }
 
+    public void create(String path, byte[] data) {
+        try {
+            zk.create(
+                    path,
+                    data,  // 使用提供的数据
+                    org.apache.zookeeper.ZooDefs.Ids.OPEN_ACL_UNSAFE,
+                    org.apache.zookeeper.CreateMode.PERSISTENT
+            );
+            System.out.println("Created node: " + path + " with data");
+        } catch (org.apache.zookeeper.KeeperException.NodeExistsException e) {
+            System.out.println("Node already exists: " + path);
+        } catch (Exception e) {
+            throw new RuntimeException("Error creating node: " + path, e);
+        }
+    }
+
     public void create(String path) {
         try {
             zk.create(

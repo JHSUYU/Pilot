@@ -19,7 +19,7 @@ import org.pilot.zookeeper.ZooKeeperClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.pilot.concurrency.ThreadManager.generateExecutionIdFromZooKeeper;
+import static org.pilot.concurrency.ThreadManager.generatePilotIdFromZooKeeper;
 
 public class PilotUtil
 {
@@ -95,23 +95,16 @@ public class PilotUtil
 
 
     public static boolean isDryRun() {
-//        count++;
-//        if (count % 10000000 == 0) {
-//            dryRunLogger.info("Current count value: " + count);
-//            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-//            StringBuilder sb = new StringBuilder();
-//            for (StackTraceElement element : stackTrace) {
-//                sb.append(element.toString()).append("\n");
-//            }
-//            dryRunLogger.info("trace in dry run is"+sb.toString());
-//        }
-
-//        if(debug){
-//            return false;
-//        }else{
-//            return Baggage.current().getEntryValue(DRY_RUN_KEY) != null && Boolean.parseBoolean(Baggage.current().getEntryValue(DRY_RUN_KEY));
-//        }
-        return Boolean.parseBoolean(Baggage.current().getEntryValue(DRY_RUN_KEY));
+        String value = Baggage.current().getEntryValue(DRY_RUN_KEY);
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        try {
+            int dryRunValue = Integer.parseInt(value);
+            return dryRunValue != 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     public static boolean isShadow() {
@@ -146,6 +139,26 @@ public class PilotUtil
                 .put(DRY_RUN_KEY, "true")
                 .build();
         return dryRunBaggage.makeCurrent();
+    }
+
+    public static Scope getDryRunTraceScope(int pilotID) {
+        // 将 int 值转换为字符串并放入 Baggage
+        Baggage dryRunBaggage = Baggage.current().toBuilder()
+                .put(DRY_RUN_KEY, String.valueOf(pilotID))
+                .build();
+        return dryRunBaggage.makeCurrent();
+    }
+
+    public static int getPilotID(){
+        String pilotId = Baggage.current().getEntryValue(DRY_RUN_KEY);
+        if (pilotId == null || pilotId.isEmpty()) {
+            return 0; // 或者抛出异常
+        }
+        try {
+            return Integer.parseInt(pilotId);
+        } catch (NumberFormatException e) {
+            return 0; // 或者抛出异常
+        }
     }
 
     public static Baggage createFastForwardBaggage(boolean flag) {
@@ -401,13 +414,8 @@ public class PilotUtil
         dryRunLog("Added worker thread: " + thread.getName() + ", total threads: " + sedaWorkerThreads.size());
     }
 
-    public static String initNewExec(){
-        String executionId = generateExecutionId();
-        long startTime = System.currentTimeMillis();
-        executionStartTimes.put(mock, startTime);
-
-        recordTime(startTime,"/users/ZhenyuLi/starttime.txt");
-
+    public static int initNewExec(){
+        int executionId = Integer.parseInt(generatePilotIdFromZooKeeper());
         dryRunLog("Starting pilot execution with ID: " + executionId);
         return executionId;
     }
@@ -583,9 +591,10 @@ public class PilotUtil
     public static final String mock = "mock";
 
 
-    private static String generateExecutionId() {
+    private static int generateExecutionId() {
+        //replace this with Zookeeper to get increasing ID globally
         long id = executionIdGenerator.incrementAndGet();
-        return "PILOT-" + id + "-" + System.nanoTime();
+        return (int) id;
     }
 
 
