@@ -13,9 +13,9 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import com.google.common.collect.*;
 import com.rits.cloning.Cloner;
 import com.rits.cloning.ICloningStrategy;
+import com.google.common.collect.*;
 
 import static org.pilot.Constants.SHADOW_DIR;
 
@@ -104,6 +104,15 @@ public class State {
             "org.apache.lucene.index.DocumentsWriter$FlushNotifications"
     };
 
+    public static final String[] metricsClasses = {
+            "com.codahale.metrics.Timer",
+            "com.codahale.metrics.Meter",
+            "com.codahale.metrics.Counter",
+            "com.codahale.metrics.Histogram",
+            "com.codahale.metrics.Gauge",
+            "com.codahale.metrics.MetricRegistry"
+    };
+
     public static final String[] poolingClasses = {
             "org.apache.lucene.index.ReaderPool",
             "org.apache.lucene.index.ReadersAndUpdates",
@@ -120,6 +129,10 @@ public class State {
             "java.util.concurrent.ConcurrentHashMap"
     };
 
+    public static final String[] SolrWorkAround = {
+            "org.apache.solr.metrics.SolrMetricsContext"
+    };
+
     public static final String[] testingClasses = {
             "com.carrotsearch.randomizedtesting.ThreadLeakControl",
             "com.carrotsearch.randomizedtesting.RandomizedRunner",
@@ -128,19 +141,92 @@ public class State {
             "junit.framework.TestCase"
     };
 
+    // list commonly used LOG class
+    public static final String[] commonLogClasses = {
+            "org.slf4j.Logger",
+            "org.slf4j.LoggerFactory",
+            "org.apache.logging.log4j.Logger",
+            "org.apache.logging.log4j.LogManager",
+            "java.util.logging.Logger"
+    };
+
+
 
     public static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(State.class);
 
     public static Cloner cloner = new Cloner();
 
+    private static class CustomStrategy implements ICloningStrategy {
+        @Override
+        public Strategy strategyFor(Object obj, Field field) {
+            if (field == null || field.getType() == null) {
+                return Strategy.IGNORE;
+            }
 
+            if (obj != null && (obj.getClass().getName().contains("$Lambda") ||
+                    obj.getClass().isSynthetic())) {
+                return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+            }
+
+            String fieldTypeName = field.getType().getName();
+            String fieldName = field.getName();
+
+
+            // 7. 检查字段值的实际类型
+            try {
+                field.setAccessible(true);
+                Object value = field.get(obj);
+                if (value != null) {
+                    String valueClassName = value.getClass().getName();
+
+
+
+                    // 文件系统相关
+                    if (valueClassName.startsWith("sun.nio.fs.") ||
+                            valueClassName.startsWith("java.nio.file.") ||
+                            valueClassName.startsWith("org.apache.lucene.store.")) {
+                        return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                    }
+
+                    if (valueClassName.contains("Lambda") ||
+                            valueClassName.contains("$Lambda") ||
+                            value.getClass().isSynthetic()) {
+                        //LOG.debug("Skipping lambda field: {} in class: {}", fieldName, obj.getClass().getName());
+                        return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                    }
+
+                    if(valueClassName.contains("org.apache.solr") && (!valueClassName.contains("org.apache.solr.update.SolrIndexWriter"))){
+                        return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                    }
+
+                    // 检查是否是匿名内部类（也可能包含不可克隆的引用）
+                    if (value.getClass().isAnonymousClass()) {
+                        //LOG.debug("Skipping anonymous class field: {} in class: {}", fieldName, obj.getClass().getName());
+                        return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                    }
+
+
+
+                    // 线程相关
+                    if (value instanceof Thread || value instanceof ThreadGroup ||
+                            value instanceof ExecutorService) {
+                        return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                    }
+                }
+            } catch (IllegalAccessException e) {
+                // 忽略访问错误
+            }
+
+            return Strategy.IGNORE;
+        }
+    }
 
     static {
 
         for (String[] classArray : new String[][]{
                 fileSystemClasses, luceneDirectoryClasses, lockingClasses,
                 threadingClasses, configClasses, callbackClasses,
-                poolingClasses, atomicClasses, testingClasses}) {
+                poolingClasses, atomicClasses, testingClasses, metricsClasses, SolrWorkAround, commonLogClasses}) {
             for (String className : classArray) {
                 try {
                     Class<?> clazz = Class.forName(className);
@@ -157,69 +243,12 @@ public class State {
         cloner.dontCloneInstanceOf(Consumer.class);
         cloner.dontCloneInstanceOf(Supplier.class);
         cloner.dontCloneInstanceOf(Predicate.class);
-
-
-        cloner.registerCloningStrategy(new ICloningStrategy() {
-            @Override
-            public Strategy strategyFor(Object obj, Field field) {
-                if (field == null || field.getType() == null) {
-                    return Strategy.IGNORE;
-                }
-
-                String fieldTypeName = field.getType().getName();
-                String fieldName = field.getName();
-
-
-                // 7. 检查字段值的实际类型
-                try {
-                    field.setAccessible(true);
-                    Object value = field.get(obj);
-                    if (value != null) {
-                        String valueClassName = value.getClass().getName();
-
-                        // 文件系统相关
-                        if (valueClassName.startsWith("sun.nio.fs.") ||
-                                valueClassName.startsWith("java.nio.file.") ||
-                                valueClassName.startsWith("org.apache.lucene.store.")) {
-                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
-                        }
-
-                        if (valueClassName.contains("Lambda") ||
-                                valueClassName.contains("$Lambda") ||
-                                value.getClass().isSynthetic()) {
-                            //LOG.debug("Skipping lambda field: {} in class: {}", fieldName, obj.getClass().getName());
-                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
-                        }
-
-                        if(valueClassName.contains("org.apache.solr")){
-                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
-                        }
-
-                        // 检查是否是匿名内部类（也可能包含不可克隆的引用）
-                        if (value.getClass().isAnonymousClass()) {
-                            //LOG.debug("Skipping anonymous class field: {} in class: {}", fieldName, obj.getClass().getName());
-                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
-                        }
-
-
-
-                        // 线程相关
-                        if (value instanceof Thread || value instanceof ThreadGroup ||
-                                value instanceof ExecutorService) {
-                            return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
-                        }
-                    }
-                } catch (IllegalAccessException e) {
-                    // 忽略访问错误
-                }
-
-                return Strategy.IGNORE;
-            }
-        });
+        cloner.registerCloningStrategy(new CustomStrategy());
     }
 
     public static IOManager IOManager = new IOManager();
     public static <T> T shallowCopy(T originalField, T dryRunField, boolean needsSet){
+        LOG.info( "needsSet={}", needsSet);
         if (!needsSet) {
             return dryRunField;
         } else {
@@ -236,9 +265,18 @@ public class State {
         if(obj.getClass().getName().contains("org.apache.lucene.store")){
             return false;
         }
+//        if(obj.getClass().getName().contains("org.apache.solr.core.SimpleFSDirectoryFactory")){
+//            LOG.info("Workaround for Solr: Using deep copy for object of type: {}", obj.getClass().getName());
+//            return true;
+//        }
 
-        if(obj.getClass().getName().contains("org.apache.lucene")){
+
+        if(obj.getClass().getName().contains("org.apache.solr.core.SimpleFSDirectoryFactory") || obj.getClass().getName().contains("org.apache.lucene")){
             LOG.info("Workaround for Solr: Using deep copy for object of type: {}", obj.getClass().getName());
+            return true;
+        }
+
+        if(obj.getClass().getName().contains("org.apache.solr.update.SolrIndexWriter")){
             return true;
         }
         return false;

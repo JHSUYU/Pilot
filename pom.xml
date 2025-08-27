@@ -26,22 +26,238 @@
                     <target>1.8</target>
                 </configuration>
             </plugin>
+
+            <!-- Maven Shade Plugin for creating shaded jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.6.0</version>
-                <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                </configuration>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
                 <executions>
                     <execution>
-                        <id>make-assembly</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <!-- Replace the original jar with the shaded jar -->
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+
+                            <!-- Don't minimize to ensure all classes are included -->
+                            <minimizeJar>false</minimizeJar>
+
+                            <!-- Create source jar for shaded classes -->
+                            <createSourcesJar>false</createSourcesJar>
+
+                            <artifactSet>
+                                <includes>
+                                    <!-- Include all runtime dependencies -->
+                                    <include>*:*</include>
+                                </includes>
+                                <excludes>
+                                    <!-- Exclude test scope dependencies -->
+                                    <exclude>junit:junit</exclude>
+                                    <exclude>org.hamcrest:*</exclude>
+                                    <exclude>org.mockito:*</exclude>
+                                    <exclude>org.powermock:*</exclude>
+                                    <exclude>net.bytebuddy:*</exclude>
+                                    <exclude>org.objenesis:objenesis:*:test</exclude>
+                                    <exclude>org.javassist:*</exclude>
+                                    <exclude>org.junit.jupiter:*</exclude>
+                                    <exclude>org.junit.platform:*</exclude>
+                                    <exclude>org.apiguardian:*</exclude>
+                                    <exclude>org.opentest4j:*</exclude>
+                                    <!-- Exclude provided scope SLF4J (if using Solr's version) -->
+                                    <!-- Remove this line if you want to include and shade SLF4J -->
+                                    <!-- <exclude>org.slf4j:slf4j-api</exclude> -->
+                                </excludes>
+                            </artifactSet>
+
+                            <relocations>
+                                <!-- Relocate Google libraries (but not protobuf used by OpenTelemetry) -->
+                                <relocation>
+                                    <pattern>com.google</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.com.google</shadedPattern>
+                                    <excludes>
+                                        <!-- Don't relocate protobuf as OpenTelemetry might use it -->
+                                        <exclude>com.google.protobuf.**</exclude>
+                                    </excludes>
+                                </relocation>
+
+<!--                                &lt;!&ndash; Relocate Cloning library &ndash;&gt;-->
+<!--                                <relocation>-->
+<!--                                    <pattern>com.rits</pattern>-->
+<!--                                    <shadedPattern>org.example.pilot.shaded.com.rits</shadedPattern>-->
+<!--                                </relocation>-->
+
+<!--                                &lt;!&ndash; Relocate Objenesis (cloning's dependency) &ndash;&gt;-->
+<!--                                <relocation>-->
+<!--                                    <pattern>org.objenesis</pattern>-->
+<!--                                    <shadedPattern>org.example.pilot.shaded.org.objenesis</shadedPattern>-->
+<!--                                </relocation>-->
+
+                                <!-- Relocate ZooKeeper and its dependencies -->
+                                <relocation>
+                                    <pattern>org.apache.zookeeper</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.apache.zookeeper</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.jute</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.apache.jute</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.yetus</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.apache.yetus</shadedPattern>
+                                </relocation>
+
+                                <!-- Relocate Netty -->
+                                <relocation>
+                                    <pattern>io.netty</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.io.netty</shadedPattern>
+                                </relocation>
+
+                                <!-- Relocate Apache Commons -->
+                                <relocation>
+                                    <pattern>org.apache.commons</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.apache.commons</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>commons</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.commons</shadedPattern>
+                                </relocation>
+
+                                <!-- Relocate logging libraries -->
+                                <relocation>
+                                    <pattern>org.slf4j</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.slf4j</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.logging.log4j</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.apache.logging.log4j</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.apache.log4j</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.apache.log4j</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>ch.qos.logback</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.ch.qos.logback</shadedPattern>
+                                </relocation>
+
+                                <!-- Relocate other potential conflicts -->
+                                <relocation>
+                                    <pattern>org.checkerframework</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.checkerframework</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.google.errorprone</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.com.google.errorprone</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.google.j2objc</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.com.google.j2objc</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>com.google.code.findbugs</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.com.google.code.findbugs</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>javax.annotation</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.javax.annotation</shadedPattern>
+                                    <excludes>
+                                        <!-- Don't relocate standard Java EE annotations -->
+                                        <exclude>javax.annotation.processing.**</exclude>
+                                    </excludes>
+                                </relocation>
+
+                                <!-- Relocate Kotlin runtime (from OkHttp in OpenTelemetry) -->
+                                <relocation>
+                                    <pattern>kotlin</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.kotlin</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>org.jetbrains</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.org.jetbrains</shadedPattern>
+                                </relocation>
+
+                                <!-- Relocate OkHttp and Okio (OpenTelemetry's dependencies) -->
+                                <relocation>
+                                    <pattern>okhttp3</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.okhttp3</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>okio</pattern>
+                                    <shadedPattern>org.example.pilot.shaded.okio</shadedPattern>
+                                </relocation>
+
+                                <!-- DO NOT relocate OpenTelemetry packages -->
+                                <!-- OpenTelemetry classes remain in their original packages:
+                                     io.opentelemetry.* stays as io.opentelemetry.*
+                                -->
+                            </relocations>
+
+                            <filters>
+                                <!-- Remove signature files from all dependencies -->
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/LICENSE*</exclude>
+                                        <exclude>META-INF/NOTICE*</exclude>
+                                        <exclude>META-INF/DEPENDENCIES</exclude>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/9/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+
+                            <transformers>
+                                <!-- Create a proper manifest -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass></mainClass>
+                                    <manifestEntries>
+                                        <Built-By>Pilot Build</Built-By>
+                                        <Build-Jdk>${java.version}</Build-Jdk>
+                                        <Implementation-Title>${project.artifactId}</Implementation-Title>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
+                                </transformer>
+
+                                <!-- Merge service files properly -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+
+                                <!-- Append certain resources -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/spring.handlers</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/spring.schemas</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/spring.factories</resource>
+                                </transformer>
+
+                                <!-- Handle Log4j2 plugin cache files -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.properties.PropertiesTransformer">
+                                    <resource>META-INF/org/apache/logging/log4j/core/config/plugins/Log4j2Plugins.dat</resource>
+                                    <alreadyMergedKey>alreadyMerged</alreadyMergedKey>
+                                </transformer>
+                            </transformers>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -56,9 +272,9 @@
         </dependency>
 
         <dependency>
-            <groupId>uk.com.robust-it</groupId>
+            <groupId>uk.robust-it</groupId>
             <artifactId>cloning</artifactId>
-            <version>1.9.9</version>
+            <version>1.10.3</version>
         </dependency>
 
         <dependency>
@@ -105,12 +321,12 @@
             </exclusions>
         </dependency>
 
-        <!-- SLF4J marked as provided - will use Cassandra's version -->
+        <!-- SLF4J - now as compile scope to be included and shaded -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>1.7.36</version>
-            <scope>provided</scope>
+            <scope>compile</scope> <!-- Changed from provided to compile -->
         </dependency>
 
         <dependency>

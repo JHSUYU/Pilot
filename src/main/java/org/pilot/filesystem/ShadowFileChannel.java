@@ -2,86 +2,154 @@ package org.pilot.filesystem;
 
 import org.pilot.PilotUtil;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.WritableByteChannel;
+import java.nio.channels.*;
 import java.nio.file.*;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.pilot.PilotUtil.debug;
-import static org.pilot.filesystem.ShadowFileSystem.fileEntries;
 
 public class ShadowFileChannel extends FileChannel {
     private FileChannel delegate;
-    private FileChannel originalChannel = null;
-    private ShadowFileState shadowFileState;
-    public OpenOption[] options;
+    private final Path originalPath;
+    private final Path shadowPath;
+    private final Path appendLogPath;
+    private final OpenOption[] options;
     private long currentPosition = 0;
+    private boolean isRebuilt = false;
 
-    public ShadowFileState getShadowFileState() {
-        return shadowFileState;
+    public ShadowFileChannel(Path originalPath, Path shadowPath, Path appendLogPath,
+                             FileChannel delegate, OpenOption[] options) {
+        this.originalPath = originalPath;
+        this.shadowPath = shadowPath;
+        this.appendLogPath = appendLogPath;
+        this.delegate = delegate;
+        this.options = options;
+
     }
 
-    private long rebuildFromLog() throws IOException {
-        // This is already called within a lock context
-        long start = System.currentTimeMillis();
+    public boolean needsRebuild(){
+        int size = 0;
+        try{
+            size = (int) Files.size(appendLogPath);
+        }catch(IOException e) {
+            size = 0;
+        }
+        return Files.exists(appendLogPath) &&
+                (size > 0);
+    }
 
-        Path tempRebuiltPath = shadowFileState.reconstructedPath;
-        Files.deleteIfExists(tempRebuiltPath);
-        Files.createFile(tempRebuiltPath);
-        long position = 0;
+    private void ensureRebuilt() throws IOException {
+        if(isRebuilt) {
+            return;
+        }
 
-        try (FileChannel rebuiltChannel = FileChannel.open(tempRebuiltPath,
-                StandardOpenOption.READ, StandardOpenOption.WRITE)) {
-            // 1. Copy original file content
-            try (FileChannel originalChannel = FileChannel.open(
-                    shadowFileState.getOriginalPath(), StandardOpenOption.READ)) {
-                originalChannel.transferTo(0, originalChannel.size(), rebuiltChannel);
-            }
-
-            // 2. Apply all write operations
-            for (FileOperation operation : shadowFileState.getOperations()) {
-                ByteBuffer buffer = ByteBuffer.wrap(operation.getData());
-                rebuiltChannel.position(operation.getOffset());
-                PilotUtil.dryRunLog("operation.getOffset()" + operation.getOffset());
-                rebuiltChannel.write(buffer);
-                position = rebuiltChannel.position();
+        if (needsRebuild()) {
+            rebuildFromLog();
+            isRebuilt = true;
+        }else{
+            // 如果没有append log，直接使用delegate
+            if (delegate == null ) {
+                delegate = FileChannel.open(originalPath, options);
             }
         }
-        PilotUtil.recordTime(System.currentTimeMillis() - start, "/users/ZhenyuLi/rebuildFromLog.txt");
-        return position;
     }
 
-    public ShadowFileChannel(FileChannel delegate, ShadowFileState shadowFileState) {
-        this.delegate = delegate;
-        this.shadowFileState = shadowFileState;
+    private void rebuildFromLog() throws IOException {
+        // 重建文件
+        Files.deleteIfExists(shadowPath);
+        Files.createFile(shadowPath);
+
+        try (SeekableByteChannel rebuiltChannel = Files.newByteChannel(shadowPath,
+                StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+
+            // 1. 复制原始文件内容（如果存在）
+            if (Files.exists(originalPath)) {
+                try (SeekableByteChannel origChannel = Files.newByteChannel(
+                        originalPath, StandardOpenOption.READ)) {
+                    ByteBuffer buffer = ByteBuffer.allocate(8192);
+                    while (origChannel.read(buffer) > 0) {
+                        buffer.flip();
+                        rebuiltChannel.write(buffer);
+                        buffer.clear();
+                    }
+                }
+            }
+
+            // 2. 应用所有写操作
+            List<FileOperation> operations = readOperationsFromLog(appendLogPath);
+            for (FileOperation operation : operations) {
+                ByteBuffer buffer = ByteBuffer.wrap(operation.getData());
+                rebuiltChannel.position(operation.getOffset());
+                rebuiltChannel.write(buffer);
+            }
+
+            currentPosition = rebuiltChannel.position();
+        }
+
+        // 重新打开delegate
+        if (delegate != null) {
+            delegate.close();
+        }
+        delegate = FileChannel.open(shadowPath, options);
+        delegate.position(currentPosition);
+
+        // 删除append log
+        Files.deleteIfExists(appendLogPath);
+    }
+
+    private List<FileOperation> readOperationsFromLog(Path logPath) throws IOException {
+        List<FileOperation> operations = new ArrayList<>();
+
+        if (!Files.exists(logPath) || Files.size(logPath) == 0) {
+            return operations;
+        }
+
+        try (ObjectInputStream in = new ObjectInputStream(Files.newInputStream(logPath))) {
+            while (true) {
+                try {
+                    FileOperation operation = (FileOperation) in.readObject();
+                    operations.add(operation);
+                } catch (EOFException e) {
+                    break;
+                }
+            }
+        } catch (ClassNotFoundException e) {
+            throw new IOException("Failed to deserialize FileOperation", e);
+        }
+
+        return operations;
+    }
+
+    private void recordOperation(FileOperation operation) throws IOException {
+        if (!Files.exists(appendLogPath.getParent())) {
+            Files.createDirectories(appendLogPath.getParent());
+        }
+
+        if (Files.exists(appendLogPath) && Files.size(appendLogPath) > 0) {
+            // 追加到现有日志
+            try (AppendingObjectOutputStream out = new AppendingObjectOutputStream(
+                    new FileOutputStream(appendLogPath.toFile(), true))) {
+                out.writeObject(operation);
+            }
+        } else {
+            // 创建新日志
+            try (ObjectOutputStream out = new ObjectOutputStream(
+                    Files.newOutputStream(appendLogPath))) {
+                out.writeObject(operation);
+            }
+        }
     }
 
     @Override
     public int read(ByteBuffer dst) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.read(dst);
-            }
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                long position = rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                this.delegate.position(position);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                return delegate.read(dst);
-            } else {
-                if (originalChannel == null) {
-                    originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
-                }
-                return originalChannel.read(dst);
-            }
+            ensureRebuilt();
+            return delegate.read(dst);
         } finally {
             GlobalLockManager.unlock();
         }
@@ -91,40 +159,10 @@ public class ShadowFileChannel extends FileChannel {
     public long read(ByteBuffer[] dsts, int offset, int length) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.read(dsts, offset, length);
-            }
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                long position = rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                this.delegate.position(position);
-                return delegate.read(dsts, offset, length);
-            } else {
-                if (originalChannel == null) {
-                    originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
-                }
-                return originalChannel.read(dsts, offset, length);
-            }
+            ensureRebuilt();
+            return delegate.read(dsts, offset, length);
         } finally {
             GlobalLockManager.unlock();
-        }
-    }
-
-    private long copyOriginalFile() throws IOException {
-        // This is already called within a lock context
-        Path tempRebuiltPath = shadowFileState.reconstructedPath;
-        Files.deleteIfExists(tempRebuiltPath);
-        Files.createFile(tempRebuiltPath);
-
-        try (FileChannel rebuiltChannel = FileChannel.open(tempRebuiltPath,
-                StandardOpenOption.READ, StandardOpenOption.WRITE);
-             FileChannel originalChannel = FileChannel.open(
-                     shadowFileState.getOriginalPath(), StandardOpenOption.READ)) {
-
-            originalChannel.transferTo(0, originalChannel.size(), rebuiltChannel);
-            return rebuiltChannel.size();
         }
     }
 
@@ -132,22 +170,8 @@ public class ShadowFileChannel extends FileChannel {
     public int read(ByteBuffer dst, long position) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.read(dst, position);
-            }
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                long tmpPosition = rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                this.delegate.position(tmpPosition);
-                return delegate.read(dst, position);
-            } else {
-                if (originalChannel == null) {
-                    originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
-                }
-                return originalChannel.read(dst);
-            }
+            ensureRebuilt();
+            return delegate.read(dst, position);
         } finally {
             GlobalLockManager.unlock();
         }
@@ -157,18 +181,19 @@ public class ShadowFileChannel extends FileChannel {
     public int write(ByteBuffer src) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
+            // 如果有append log或原始文件存在，写入append log
+            if (Files.exists(appendLogPath)) {
+                byte[] data = new byte[src.remaining()];
+                src.get(data);
+
+                FileOperation operation = new FileOperation(currentPosition, data, "WRITE");
+                recordOperation(operation);
+                currentPosition += data.length;
+                return data.length;
+            } else {
+                // 新文件，直接写入shadow
                 return delegate.write(src);
             }
-
-            byte[] data = new byte[src.remaining()];
-            src.get(data);
-
-            setCurrentPositionFromOriginalChannel();
-            FileOperation operation = new FileOperation(currentPosition, data, "WRITE");
-            shadowFileState.recordOperation(operation);
-            currentPosition += data.length;
-            return data.length;
         } finally {
             GlobalLockManager.unlock();
         }
@@ -178,34 +203,28 @@ public class ShadowFileChannel extends FileChannel {
     public long write(ByteBuffer[] srcs, int offset, int length) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
+            if (Files.exists(appendLogPath)) {
+                long totalLength = 0;
+                for (int i = offset; i < offset + length; i++) {
+                    totalLength += srcs[i].remaining();
+                }
+
+                byte[] combinedData = new byte[(int) totalLength];
+                int pos = 0;
+                for (int i = offset; i < offset + length; i++) {
+                    ByteBuffer src = srcs[i];
+                    int len = src.remaining();
+                    src.get(combinedData, pos, len);
+                    pos += len;
+                }
+
+                FileOperation operation = new FileOperation(currentPosition, combinedData, "WRITE");
+                recordOperation(operation);
+                currentPosition += totalLength;
+                return totalLength;
+            } else {
                 return delegate.write(srcs, offset, length);
             }
-
-            // Calculate total length
-            long totalLength = 0;
-            for (int i = offset; i < offset + length; i++) {
-                totalLength += srcs[i].remaining();
-            }
-
-            // Create a large data array
-            byte[] combinedData = new byte[(int) totalLength];
-            int position = 0;
-
-            // Copy all data
-            for (int i = offset; i < offset + length; i++) {
-                ByteBuffer src = srcs[i];
-                int len = src.remaining();
-                src.get(combinedData, position, len);
-                position += len;
-            }
-
-            // Create single FileOperation
-            setCurrentPositionFromOriginalChannel();
-            FileOperation operation = new FileOperation(currentPosition, combinedData, "WRITE");
-            shadowFileState.recordOperation(operation);
-            currentPosition += totalLength;
-            return totalLength;
         } finally {
             GlobalLockManager.unlock();
         }
@@ -215,47 +234,28 @@ public class ShadowFileChannel extends FileChannel {
     public int write(ByteBuffer src, long position) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
+            if (Files.exists(appendLogPath)) {
+                byte[] data = new byte[src.remaining()];
+                src.get(data);
+
+                FileOperation operation = new FileOperation(position, data, "WRITE");
+                recordOperation(operation);
+                return data.length;
+            } else {
                 return delegate.write(src, position);
             }
-
-            byte[] data = new byte[src.remaining()];
-            src.get(data);
-
-            setCurrentPositionFromOriginalChannel();
-            FileOperation operation = new FileOperation(position, data, "WRITE");
-            shadowFileState.recordOperation(operation);
-            return data.length;
         } finally {
             GlobalLockManager.unlock();
         }
     }
 
     @Override
-    public MappedByteBuffer map(MapMode mode, long position, long size) throws IOException {
-        return null;
-    }
-
-    @Override
     public long position() throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.position();
-            }
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                long position = rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                this.delegate.position(position);
-                return position;
-            } else {
-                if (originalChannel == null) {
-                    originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
-                }
-                return originalChannel.position();
-            }
+
+            ensureRebuilt();
+            return delegate.position();
         } finally {
             GlobalLockManager.unlock();
         }
@@ -265,24 +265,10 @@ public class ShadowFileChannel extends FileChannel {
     public FileChannel position(long newPosition) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                delegate.position(newPosition);
-                return this;
-            }
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                this.delegate.position(newPosition);
-                return this;
-            } else {
-                if (originalChannel == null) {
-                    originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
-                }
-                originalChannel.position(newPosition);
-                return this;
-            }
+            currentPosition = newPosition;
+            ensureRebuilt();
+            delegate.position(newPosition);
+            return this;
         } finally {
             GlobalLockManager.unlock();
         }
@@ -292,21 +278,11 @@ public class ShadowFileChannel extends FileChannel {
     public long size() throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
+            if(delegate!=null){
                 return delegate.size();
             }
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                return delegate.size();
-            } else {
-                if (originalChannel == null) {
-                    originalChannel = FileChannel.open(shadowFileState.getOriginalPath(), options);
-                }
-                return originalChannel.size();
-            }
+            ensureRebuilt();
+            return delegate.size();
         } finally {
             GlobalLockManager.unlock();
         }
@@ -316,26 +292,13 @@ public class ShadowFileChannel extends FileChannel {
     public FileChannel truncate(long size) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                delegate.truncate(size);
-                return this;
+            if(delegate!=null){
+                return delegate.truncate(size);
             }
-
-            if (Files.exists(shadowFileState.getAppendLogPath())) {
-                rebuildFromLog();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                Files.deleteIfExists(shadowFileState.getAppendLogPath());
-                this.delegate.truncate(size);
-                return this.delegate;
-            } else {
-                // Copy shadowFileState.getOriginalPath() file to shadowFileState.reconstructedPath
-                copyOriginalFile();
-                this.delegate = FileChannel.open(shadowFileState.reconstructedPath, options);
-                shadowFileState.existBeforePilot = false;
-                this.delegate.truncate(size);
-                return this.delegate;
-            }
+            rebuildFromLog();
+            isRebuilt = true;
+            delegate.truncate(size);
+            return this;
         } finally {
             GlobalLockManager.unlock();
         }
@@ -345,9 +308,16 @@ public class ShadowFileChannel extends FileChannel {
     public void force(boolean metaData) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
+            if(delegate!=null){
                 delegate.force(metaData);
+                return;
             }
+
+            rebuildFromLog();
+            isRebuilt = true;
+            delegate.force(metaData);
+
+            // 如果需要重建，不执行force操作
         } finally {
             GlobalLockManager.unlock();
         }
@@ -357,10 +327,8 @@ public class ShadowFileChannel extends FileChannel {
     public long transferTo(long position, long count, WritableByteChannel target) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.transferTo(position, count, target);
-            }
-            return 0;
+            ensureRebuilt();
+            return delegate.transferTo(position, count, target);
         } finally {
             GlobalLockManager.unlock();
         }
@@ -370,10 +338,19 @@ public class ShadowFileChannel extends FileChannel {
     public long transferFrom(ReadableByteChannel src, long position, long count) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.transferFrom(src, position, count);
-            }
-            return 0;
+            ensureRebuilt();
+            return delegate.transferFrom(src, position, count);
+        } finally {
+            GlobalLockManager.unlock();
+        }
+    }
+
+    @Override
+    public MappedByteBuffer map(MapMode mode, long position, long size) throws IOException {
+        GlobalLockManager.lock();
+        try {
+            ensureRebuilt();
+            return delegate.map(mode, position, size);
         } finally {
             GlobalLockManager.unlock();
         }
@@ -383,10 +360,8 @@ public class ShadowFileChannel extends FileChannel {
     public FileLock lock(long position, long size, boolean shared) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.lock(position, size, shared);
-            }
-            return null;
+            ensureRebuilt();
+            return delegate.lock(position, size, shared);
         } finally {
             GlobalLockManager.unlock();
         }
@@ -396,10 +371,8 @@ public class ShadowFileChannel extends FileChannel {
     public FileLock tryLock(long position, long size, boolean shared) throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
-                return delegate.tryLock(position, size, shared);
-            }
-            return null;
+            ensureRebuilt();
+            return delegate.tryLock(position, size, shared);
         } finally {
             GlobalLockManager.unlock();
         }
@@ -409,24 +382,11 @@ public class ShadowFileChannel extends FileChannel {
     protected void implCloseChannel() throws IOException {
         GlobalLockManager.lock();
         try {
-            if (!shadowFileState.existBeforePilot) {
+            if (delegate != null) {
                 delegate.close();
-                return;
             }
         } finally {
             GlobalLockManager.unlock();
-        }
-    }
-
-    public void setCurrentPositionFromOriginalChannel() {
-        // This is called within lock context, no need for additional locking
-        if (originalChannel != null) {
-            try {
-                currentPosition = originalChannel.position();
-            } catch (IOException e) {
-                e.printStackTrace();
-                PilotUtil.dryRunLog("ShadowFileChannel.setCurrentPositionFromOriginalChannel" + e.getMessage());
-            }
         }
     }
 
@@ -436,58 +396,54 @@ public class ShadowFileChannel extends FileChannel {
             if (debug || !PilotUtil.isDryRun()) {
                 return FileChannel.open(originalPath, options);
             }
-            PilotUtil.dryRunLog("ShadowFileChannel.open" + originalPath.toString());
-            try {
-                ShadowFileSystem.initializeFromOriginal();
-            } catch (IOException e) {
-                PilotUtil.dryRunLog("Error3 initializing ShadowFileSystem: " + e.getMessage() + e);
-                throw new IOException("Failed to initialize ShadowFileSystem", e);
-            }
+
+            originalPath = ShadowFileSystem.getOriginalFSPath(originalPath);
+
+            ShadowFileSystem.initializeFromOriginal();
             Path absOriginal = originalPath.toAbsolutePath();
+            Path shadowPath = ShadowFileSystem.resolveShadowFSPath(absOriginal);
+            Path appendLogPath = ShadowFileSystem.resolveShadowFSAppendLogFilePath(absOriginal);
 
-            Path shadowFile = ShadowFileSystem.resolveShadowFSPath(absOriginal);
-            boolean exist = Files.exists(shadowFile);
-            if (!exist) {
-                PilotUtil.dryRunLog("create file" + shadowFile.toString());
-                try {
-                    Files.createFile(shadowFile);
-                } catch (IOException e) {
-                    PilotUtil.dryRunLog("File already created by another thread: " + shadowFile);
-                    throw e;
-                }
+            // 确保父目录存在
+            Path parent = shadowPath.getParent();
+            if (parent != null && !Files.exists(parent)) {
+                Files.createDirectories(parent);
             }
 
-            OpenOption[] newOptions = Arrays.stream(options)
-                    .filter(opt -> opt != StandardOpenOption.CREATE_NEW)
-                    .toArray(OpenOption[]::new);
-
-            FileChannel fileChannel = FileChannel.open(shadowFile, newOptions);
-
-            ShadowFileState shadowFileState = fileEntries.get(absOriginal);
-            if (shadowFileState == null) {
-                shadowFileState = new ShadowFileState(absOriginal, ShadowFileSystem.shadowBaseDir);
-                shadowFileState.existBeforePilot = false;
-                shadowFileState.reconstructedPath = shadowFile;
-                shadowFileState.setAppendLogPath(ShadowFileSystem.resolveShadowFSAppendLogFilePath(absOriginal));
-                fileEntries.put(absOriginal, shadowFileState);
-            } else {
-                if (shadowFileState.existBeforePilot) {
-                    shadowFileState.existBeforePilot = exist;
-                }
-                shadowFileState.reconstructedPath = shadowFile;
-                shadowFileState.setAppendLogPath(ShadowFileSystem.resolveShadowFSAppendLogFilePath(absOriginal));
-                fileEntries.put(absOriginal, shadowFileState);
+            // 如果有append log，需要重建
+            if (Files.exists(appendLogPath)) {
+                ShadowFileChannel channel = new ShadowFileChannel(
+                        absOriginal, shadowPath, appendLogPath, null, options);
+                return channel;
             }
-            Files.deleteIfExists(shadowFileState.getAppendLogPath());
-            ShadowFileChannel res = new ShadowFileChannel(fileChannel, shadowFileState);
-            if (!shadowFileState.existBeforePilot) {
-                PilotUtil.dryRunLog("return normal fileChannel with path" + shadowFile.toAbsolutePath());
-                return fileChannel;
-            }
-            res.options = newOptions;
-            return res;
+
+//            // 如果原始文件存在但shadow不存在
+//            if (Files.exists(absOriginal) && !Files.exists(shadowPath)) {
+//                // 返回可以写append log的channel
+//                FileChannel delegate = FileChannel.open(shadowPath, StandardOpenOption.CREATE,
+//                        StandardOpenOption.READ, StandardOpenOption.WRITE);
+//                return new ShadowFileChannel(absOriginal, shadowPath, appendLogPath, delegate, options);
+//            }
+//
+//            // 其他情况，直接使用shadow文件
+//            if (!Files.exists(shadowPath)) {
+//                Files.createFile(shadowPath);
+//            }
+            return FileChannel.open(shadowPath, options);
         } finally {
             GlobalLockManager.unlock();
+        }
+    }
+
+    // 辅助类
+    private static class AppendingObjectOutputStream extends ObjectOutputStream {
+        public AppendingObjectOutputStream(OutputStream out) throws IOException {
+            super(out);
+        }
+
+        @Override
+        protected void writeStreamHeader() throws IOException {
+            // 不写header
         }
     }
 }

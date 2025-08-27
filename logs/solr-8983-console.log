@@ -1,0 +1,93 @@
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+OpenJDK 64-Bit Server VM warning: Failed to reserve shared memory. (error = 12)
+2025-08-21 01:47:14.863 INFO  (main) [   ] o.e.j.u.log Logging initialized @5064ms to org.eclipse.jetty.util.log.Slf4jLog
+2025-08-21 01:47:15.143 INFO  (main) [   ] o.e.j.s.Server jetty-9.4.53.v20231009; built: 2023-10-09T12:29:09.265Z; git: 27bde00a0b95a1d5bbee0eae7984f891d2d0f8c9; jvm 1.8.0_452-8u452-ga~us1-0ubuntu1~22.04-b09
+2025-08-21 01:47:15.157 INFO  (main) [   ] o.e.j.d.p.ScanningAppProvider Deployment monitor [file:///opt/Solr/solr/server/contexts/] at interval 0
+2025-08-21 01:47:15.541 INFO  (main) [   ] o.e.j.w.StandardDescriptorProcessor NO JSP Support for /solr, did not find org.apache.jasper.servlet.JspServlet
+2025-08-21 01:47:15.554 INFO  (main) [   ] o.e.j.s.session DefaultSessionIdManager workerName=node0
+2025-08-21 01:47:15.554 INFO  (main) [   ] o.e.j.s.session No SessionScavenger set, using defaults
+2025-08-21 01:47:15.558 INFO  (main) [   ] o.e.j.s.session node0 Scavenging every 600000ms
+2025-08-21 01:47:15.660 INFO  (main) [   ] o.a.s.s.SolrDispatchFilter Using logger factory org.apache.logging.slf4j.Log4jLoggerFactory
+2025-08-21 01:47:15.676 INFO  (main) [   ] o.a.s.s.SolrDispatchFilter  ___      _       Welcome to Apache Solr™ version 8.11.4-SNAPSHOT c4854077b6fe31380eb668c5bb45db5b0f2a049b - ZhenyuLi - 2025-08-21 01:12:28
+2025-08-21 01:47:15.676 INFO  (main) [   ] o.a.s.s.SolrDispatchFilter / __| ___| |_ _   Starting in cloud mode on port 8983
+2025-08-21 01:47:15.677 INFO  (main) [   ] o.a.s.s.SolrDispatchFilter \__ \/ _ \ | '_|  Install dir: /opt/Solr/solr
+2025-08-21 01:47:15.678 INFO  (main) [   ] o.a.s.s.SolrDispatchFilter |___/\___/_|_|    Start time: 2025-08-21T01:47:15.678Z
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 0
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 4
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 4
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+Using dry run path: /opt/SolrDataPilot/mycollection_shard1_replica_n2/data/index.20250821014739696
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 0
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 1
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 1
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 1
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 4
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 1
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 0
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+incref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 0
+decref called on org.apache.solr.update.DefaultSolrCoreState$1 with refcount: 1
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 4
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3
+incref called on org.apache.solr.core.SolrCore$2 with refcount: 2
+decref called on org.apache.solr.core.SolrCore$2 with refcount: 3

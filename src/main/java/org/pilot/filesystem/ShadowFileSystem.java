@@ -23,7 +23,11 @@ public class ShadowFileSystem {
 
     public static Path shadowAppendLogDir = Paths.get("/opt/ShadowAppendLog");
 
-    public static Path originalRoot = Paths.get("/opt/cassandra_data");
+    // CASSANDRA
+    // public static Path originalRoot = Paths.get("/opt/cassandra_data");
+
+    // Solr
+    public static Path originalRoot = Paths.get("/opt/SolrData");
 
 //    public static Path shadowBaseDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowDirectory");
 //    public static Path shadowAppendLogDir = Paths.get("/Users/lizhenyu/Desktop/Evaluation/cassandra-correct-version/ShadowAppendLog");
@@ -81,8 +85,12 @@ public class ShadowFileSystem {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     Path absFile = file.toAbsolutePath();
                     Path shadowFile = resolveShadowFSPath(absFile);
+                    Path shadowLogFile = resolveShadowFSAppendLogFilePath(absFile);
                     if (!Files.exists(shadowFile)) {
                         Files.createFile(shadowFile);
+                    }
+                    if (!Files.exists(shadowLogFile)) {
+                        Files.createFile(shadowLogFile);
                     }
                     fileEntries.put(absFile, new ShadowFileState(absFile, shadowBaseDir));
                     return FileVisitResult.CONTINUE;
@@ -130,7 +138,7 @@ public class ShadowFileSystem {
         return shadowPath.toString();
     }
 
-    public static Path getShadowFSPath(Path absOriginal) throws IOException {
+    public static Path getShadowFSPath(Path absOriginal) {
         // This method is called within lock context, no additional locking needed
         if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
             System.out.println("File is already under the shadow base directory. No need to resolve." + absOriginal);
@@ -144,7 +152,52 @@ public class ShadowFileSystem {
         return shadowPath;
     }
 
-    public static Path resolveShadowFSAppendLogFilePath(Path absOriginal) throws IOException {
+    public static Path getOriginalFSPath(Path shadowPath) {
+        // This method is called within lock context, no additional locking needed
+        Path absShadowPath = shadowPath.toAbsolutePath();
+        Path absShadowBaseDir = shadowBaseDir.toAbsolutePath();
+
+        // 检查路径是否在 shadow 目录下
+        if (!absShadowPath.startsWith(absShadowBaseDir)) {
+            PilotUtil.dryRunLog("Path is not under shadow base directory, assuming it's already original: " + shadowPath);
+            // 如果不在 shadow 目录下，可能已经是原始路径
+            return shadowPath;
+        }
+
+        // 获取相对于 shadowBaseDir 的路径
+        Path relativePath = absShadowBaseDir.relativize(absShadowPath);
+        PilotUtil.dryRunLog("relativePath from shadow: " + relativePath);
+
+        // 重建原始路径：使用根路径 "/" 加上相对路径
+        Path originalPath = Paths.get("/").resolve(relativePath);
+        PilotUtil.dryRunLog("originalPath: " + originalPath);
+
+        return originalPath;
+    }
+
+    public static String getOriginalFSPathString(String shadowPathStr) {
+        Path shadowPath = Paths.get(shadowPathStr);
+        Path absShadowPath = shadowPath.toAbsolutePath();
+        Path absShadowBaseDir = shadowBaseDir.toAbsolutePath();
+
+        // 检查路径是否在 shadow 目录下
+        if (!absShadowPath.startsWith(absShadowBaseDir)) {
+            PilotUtil.dryRunLog("Path is not under shadow base directory, assuming it's already original: " + shadowPathStr);
+            return shadowPathStr;
+        }
+
+        // 获取相对于 shadowBaseDir 的路径
+        Path relativePath = absShadowBaseDir.relativize(absShadowPath);
+        PilotUtil.dryRunLog("relativePath from shadow: " + relativePath);
+
+        // 重建原始路径
+        Path originalPath = Paths.get("/").resolve(relativePath);
+        PilotUtil.dryRunLog("originalPath: " + originalPath);
+
+        return originalPath.toString();
+    }
+
+    public static Path resolveShadowFSAppendLogFilePath(Path absOriginal) {
         // This method is called within lock context, no additional locking needed
         if (absOriginal.toAbsolutePath().startsWith(shadowBaseDir.toAbsolutePath())) {
             PilotUtil.dryRunLog("File is already under the shadow base directory. No need to resolve." + absOriginal);
