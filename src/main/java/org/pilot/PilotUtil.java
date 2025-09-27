@@ -1,6 +1,8 @@
 package org.pilot;
 
+import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.trace.*;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.ContextKey;
 import io.opentelemetry.context.Scope;
@@ -13,13 +15,29 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
+import javax.servlet.ReadListener;
+import javax.servlet.ServletException;
+import javax.servlet.ServletInputStream;
+import javax.servlet.ServletOutputStream;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.UnavailableException;
+import javax.servlet.WriteListener;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequestWrapper;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletResponseWrapper;
 
 import org.pilot.concurrency.ThreadManager;
+import org.pilot.trace.TraceRecorder;
 import org.pilot.zookeeper.ZooKeeperClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.pilot.concurrency.ThreadManager.generatePilotIdFromZooKeeper;
+import static org.pilot.trace.TraceRecorder.defaultSpanId;
 
 public class PilotUtil
 {
@@ -41,7 +59,13 @@ public class PilotUtil
     public static final String PILOT_ID_KEY = "pilot_id";
     public static final String FAST_FORWARD_KEY = "is_fast_forward";
 
+    public static final String TRACER_ID="pilot-execution";
+
     public static final String IS_SHADOW_THREAD_KEY = "is_shadow_thread";
+
+    public static final String PILOT_ID="pilotID";
+
+    public static final String SPAN_ID="spanID";
 
     public static final String SHOULD_RELEASE_LOCK_KEY = "should_release_lock";
     public static ContextKey<Boolean> IS_DRY_RUN = ContextKey.named("is_dry_run");
@@ -105,6 +129,12 @@ public class PilotUtil
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    public static Scope getPilotContext(Context ctx, int pilotID){
+        Baggage dryRunBaggage = Baggage.builder().put(DRY_RUN_KEY, pilotID+"").build();
+        Context context = ctx.with(dryRunBaggage);
+        return ctx.makeCurrent();
     }
 
     public static boolean isShadow() {
@@ -414,6 +444,15 @@ public class PilotUtil
         dryRunLog("Added worker thread: " + thread.getName() + ", total threads: " + sedaWorkerThreads.size());
     }
 
+//    public static void start(Runnable entryPoint){
+//        int pilotID=initNewExec();
+//        String initialSpanId = TraceRecorder.generateSpanId();
+//        Context pilotContext = generateContext(pilotID, initialSpanId);
+//
+//
+//    }
+
+
     public static int initNewExec(){
         int executionId = Integer.parseInt(generatePilotIdFromZooKeeper());
         dryRunLog("Starting pilot execution with ID: " + executionId);
@@ -513,6 +552,37 @@ public class PilotUtil
             dryRunLog("Error in waitUntilPilotExecutionFinished: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+
+    public static Scope getContextFromHTTP(ServletRequest request){
+        int pilotID=0;
+        String spanID= defaultSpanId;
+        if(request instanceof HttpServletRequest){
+            try{
+                pilotID = Integer.parseInt(((HttpServletRequest) request).getHeader(PILOT_ID));
+                spanID = ((HttpServletRequest) request).getHeader(SPAN_ID);
+            }catch(NumberFormatException e){
+            }
+        }
+        Context ctx= generateContext(pilotID, spanID);
+        return getPilotContext(ctx, pilotID);
+    }
+
+    public static Context generateContext(int pilotID, String spanID){
+        SpanContext remoteContext = SpanContext.createFromRemoteParent(
+                TraceRecorder.pilotStartingTraceId,
+                spanID,
+                TraceFlags.fromHex("00",0),
+                TraceState.getDefault()
+        );
+        Tracer tracer= GlobalOpenTelemetry.get().getTracer(TRACER_ID);
+        Span span = tracer.spanBuilder("HTTP")
+                .setParent(Context.root().with(Span.wrap(remoteContext)))
+                .startSpan();
+        Context context = Context.current();
+        context=context.with(span);
+        return context;
     }
 
     /**

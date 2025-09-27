@@ -38,6 +38,7 @@ public class TraceRecorder {
     private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
     public static String startingTraceId = "3617d8ae962ce21488ca1c968e2bd3fd";
     public static String pilotStartingTraceId = "6617d8ae962ce21488ca1c968e2bd3fd";
+    public static String defaultSpanId="0000000000000000";
 
     // 无锁队列用于存储待写入的日志
     private static final ConcurrentLinkedQueue<String> writeQueue = new ConcurrentLinkedQueue<>();

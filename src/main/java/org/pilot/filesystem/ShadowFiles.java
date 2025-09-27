@@ -129,9 +129,9 @@ public class ShadowFiles {
     }
 
     //Used in FSDirecotry Solr Files.isDirectory
-    public static boolean isDirectory(Path path) {
+    public static boolean isDirectory(Path path, LinkOption... options) {
         if (!PilotUtil.isDryRun()) {
-            return Files.isDirectory(path);
+            return Files.isDirectory(path, options);
         }
 
         path = ShadowFileSystem.getOriginalFSPath(path.toAbsolutePath());
@@ -143,7 +143,7 @@ public class ShadowFiles {
         }
 
         Path shadowPath = ShadowFileSystem.getShadowFSPath(path);
-        return Files.isDirectory(shadowPath);
+        return Files.isDirectory(shadowPath, options);
     }
 
     public static Path createDirectories(Path dir, FileAttribute<?>... attrs)

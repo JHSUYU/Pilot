@@ -150,6 +150,15 @@ public class State {
             "java.util.logging.Logger"
     };
 
+    public static final String[] otherClasses = {
+            "java.lang.ClassLoader",
+            "java.net.URLClassLoader",
+            "java.net.URL",
+            "java.util.regex.Pattern",
+            "java.util.regex.Matcher",
+            "java.io.PrintStream",
+    };
+
 
 
     public static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(State.class);
@@ -185,6 +194,10 @@ public class State {
                     if (valueClassName.startsWith("sun.nio.fs.") ||
                             valueClassName.startsWith("java.nio.file.") ||
                             valueClassName.startsWith("org.apache.lucene.store.")) {
+                        return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
+                    }
+
+                    if(valueClassName.startsWith("org.apache.lucene.codecs")){
                         return Strategy.SAME_INSTANCE_INSTEAD_OF_CLONE;
                     }
 
@@ -258,6 +271,9 @@ public class State {
 
 
     public static <T> T deepCopy(T obj) {
+//        if(obj.getClass().getName().contains("StandardDirectoryReader")){
+//            return obj;
+//        }
         return cloner.deepClone(obj);
     }
 

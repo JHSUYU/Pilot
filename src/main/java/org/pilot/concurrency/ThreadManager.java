@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
-
 import static org.pilot.PilotUtil.dryRunLog;
 import static org.pilot.PilotUtil.executionIdGenerator;
 
