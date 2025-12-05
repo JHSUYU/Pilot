@@ -75,6 +75,10 @@ public class ZooKeeperClient {
         this.connectionString = connectionString;
     }
 
+    public ZooKeeperClient(ZooKeeper zooKeeper){
+        this.zk = zooKeeper;
+    }
+
     public void connect() {
         try {
             zk = new ZooKeeper(

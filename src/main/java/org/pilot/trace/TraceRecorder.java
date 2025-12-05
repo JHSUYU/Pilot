@@ -30,37 +30,27 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.pilot.Constants.*;
+
 /**
  * Records trace relationships and context propagation for analysis
  */
 public class TraceRecorder {
-    private static final String TRACE_FILE = "/opt/trace.txt";
-    private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-    public static String startingTraceId = "3617d8ae962ce21488ca1c968e2bd3fd";
-    public static String pilotStartingTraceId = "6617d8ae962ce21488ca1c968e2bd3fd";
-    public static String defaultSpanId="0000000000000000";
 
-    // 无锁队列用于存储待写入的日志
     private static final ConcurrentLinkedQueue<String> writeQueue = new ConcurrentLinkedQueue<>();
 
-    // 单线程执行器用于异步写入
     private static final ScheduledExecutorService writerExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "TraceRecorder-Writer");
         t.setDaemon(true);
         return t;
     });
 
-    // 标记是否已经关闭
     private static final AtomicBoolean shutdown = new AtomicBoolean(false);
 
-    // 标记是否已经初始化 - 使用volatile保证可见性
     private static volatile boolean initialized = false;
 
-    // 用于双重检查锁定的对象
     private static final Object initLock = new Object();
 
-    // ================== OpenTelemetry Helper Methods ==================
-    // 这些方法用于字节码插桩，避免直接调用接口静态方法导致的兼容性问题
 
     /**
      * 获取当前 Span
@@ -224,12 +214,7 @@ public class TraceRecorder {
         endSpan(span);
     }
 
-    // ================== Original Methods ==================
 
-    /**
-     * Initialize OpenTelemetry with singleton pattern
-     * 使用双重检查锁定(Double-Checked Locking)确保线程安全且高效
-     */
     public static void initializeOpenTelemetry() {
         // 第一次检查，避免不必要的同步
         if (initialized) {
@@ -334,7 +319,7 @@ public class TraceRecorder {
      * Record when a method is entered
      */
     public static void recordMethodEntry(String traceId, String spanId, String methodName) {
-        if(traceId.equals(startingTraceId)){
+        if(traceId.equals(normalTraceId)){
             record(String.format("%s|ENTRY|%s|%s|%d\n",
                     traceId, spanId, methodName, System.currentTimeMillis()));
         }
@@ -346,7 +331,7 @@ public class TraceRecorder {
     public static void recordRelation(String traceId, String parentSpanId,
                                       String childSpanId, String parentMethod,
                                       String childMethod, String edgeType) {
-        if(traceId.equals(startingTraceId)){
+        if(traceId.equals(normalTraceId)){
             record(String.format("%s|RELATION|%s|%s|%s|%s|%s|%d\n",
                     traceId, parentSpanId, childSpanId, parentMethod, childMethod, edgeType, System.currentTimeMillis()));
         }
@@ -358,7 +343,7 @@ public class TraceRecorder {
     public static void recordAsyncSubmission(String traceId, String parentSpanId,
                                              String parentMethod, String taskClass,
                                              String submissionType) {
-        if(traceId.equals(startingTraceId)){
+        if(traceId.equals(normalTraceId)){
             record(String.format("%s|ASYNC_SUBMISSION|%s|%s|%s|%s|%d\n",
                     traceId, parentSpanId, parentMethod, taskClass, submissionType, System.currentTimeMillis()));
         }
@@ -370,7 +355,7 @@ public class TraceRecorder {
     public static void recordAsyncExecution(String traceId, String parentSpanId,
                                             String childSpanId, String parentMethod,
                                             String executorThread, String taskType) {
-        if(traceId.equals(startingTraceId)){
+        if(traceId.equals(normalTraceId)){
             record(String.format("%s|ASYNC_EXECUTION|%s|%s|%s|%s|%s|%d\n",
                     traceId, parentSpanId, childSpanId, parentMethod, executorThread, taskType, System.currentTimeMillis()));
         }
@@ -382,7 +367,7 @@ public class TraceRecorder {
     public static void recordContextPropagation(String traceId, String fromSpanId,
                                                 String toSpanId, String fromThread,
                                                 String toThread, String propagationType) {
-        if(traceId.equals(startingTraceId)){
+        if(traceId.equals(normalTraceId)){
             record(String.format("%s|CONTEXT_PROPAGATION|%s|%s|%s|%s|%s|%d\n",
                     traceId, fromSpanId, toSpanId, fromThread, toThread, propagationType, System.currentTimeMillis()));
         }
@@ -394,7 +379,7 @@ public class TraceRecorder {
     public static void recordFutureCallback(String traceId, String parentSpanId,
                                             String parentMethod, String callbackType,
                                             String edgeType) {
-        if(traceId.equals(startingTraceId)){
+        if(traceId.equals(normalTraceId)){
             record(String.format("%s|FUTURE_CALLBACK|%s|%s|%s|%s|%d\n",
                     traceId, parentSpanId, parentMethod, callbackType, edgeType, System.currentTimeMillis()));
         }
@@ -407,7 +392,7 @@ public class TraceRecorder {
                                           String childSpanId, String childMethod) {
 
 
-        if(traceId.equals(startingTraceId) || traceId.equals(pilotStartingTraceId)){
+        if(traceId.equals(normalTraceId) || traceId.equals(pilotTraceId)){
             record(String.format("%s|SPAN_RELATION|%s|%s|%s|%d\n",
                     traceId, parentSpanId, childSpanId, childMethod, System.currentTimeMillis()));
         }

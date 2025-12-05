@@ -1,14 +1,24 @@
 package org.pilot.concurrency;
 
+import org.apache.zookeeper.ZooKeeper;
 import org.pilot.zookeeper.ZooKeeperClient;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+
+import static org.pilot.Constants.*;
 import static org.pilot.PilotUtil.dryRunLog;
 import static org.pilot.PilotUtil.executionIdGenerator;
+import static org.pilot.filesystem.ShadowFileSystem.shadowAppendLogDir;
+import static org.pilot.filesystem.ShadowFileSystem.shadowBaseDir;
 
 public class ThreadManager {
 
@@ -19,7 +29,7 @@ public class ThreadManager {
     public static Map<String, List<Thread>> phantomThreads = new ConcurrentHashMap<>();
     public static Map<String, List<ScheduledFuture<?>>> phantomScheduledFutures = new ConcurrentHashMap<>();
 
-    private static ZooKeeperClient zooKeeperClient;
+    public static ZooKeeperClient zooKeeperClient;
 
     public static final String DRY_RUN_PATH = "/dry-run";
 
@@ -27,9 +37,9 @@ public class ThreadManager {
 
     public static final String PILOT_PATH = "/pilot-id";
 
-    public static final String mockID = "00000000-0000-0000-0000-000000000000";
+    public static final String PILOT_RESULT_PATH = "/pilot-results";
 
-    public static final String connectionString = "node0:2181"; //
+    public static final String mockID = "00000000-0000-0000-0000-000000000000";//
 
 
     static {
@@ -39,10 +49,88 @@ public class ThreadManager {
     /**
      * Initialize ZooKeeper client and set up watchers.
      */
-    private static void initializeZooKeeper() {
+    public static void initializeZooKeeper() {
         try {
             zooKeeperClient = new ZooKeeperClient(connectionString);
             zooKeeperClient.connect();
+
+            // Set up watcher for the dry-run directory in ZooKeeper
+            zooKeeperClient.watchChildren(PILOT_PATH, (event) -> {
+                if (event.getType() == ZooKeeperClient.EventType.NODE_DELETED) {
+                    String path = event.getPath();
+                    String nodeName = path.substring(path.lastIndexOf('/') + 1);
+                    System.out.println("Pilot node deleted: " + nodeName);
+
+                    try {
+                        Integer.parseInt(nodeName);
+
+                        cleanupPhantomThreads(nodeName);
+                        cleanupPhantomFutures(nodeName);
+                        //delete TRACE_FILE
+                        deleteFile(TRACE_FILE);
+                        deleteDirectory(shadowBaseDir.toString());
+                        deleteDirectory(shadowAppendLogDir.toString());
+
+
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid numeric format in deleted node: " + nodeName);
+                    }
+                }
+            });
+
+            System.out.println("Connected to ZooKeeper and watching path: " + DRY_RUN_PATH);
+        } catch (Exception e) {
+            System.err.println("Failed to initialize ZooKeeper: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static boolean deleteDirectory(String dirPath) {
+        File directory = new File(dirPath);
+
+        if (!directory.exists()) {
+            return false;
+        }
+
+        return deleteRecursively(directory);
+    }
+
+    private static boolean deleteRecursively(File file) {
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (File child : files) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        return file.delete();
+    }
+
+    public static boolean deleteFile(String filePath) {
+        try {
+            Path path = Paths.get(filePath);
+            boolean deleted = Files.deleteIfExists(path);
+            if (deleted) {
+                System.out.println("File deleted successfully: " + filePath);
+            } else {
+                System.out.println("File does not exist: " + filePath);
+            }
+            return deleted;
+        } catch (IOException e) {
+            System.err.println("Failed to delete file: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public static void initializeZooKeeper(String quorum) {
+        try {
+            if(zooKeeperClient != null){
+                return;
+            }
+            zooKeeperClient= new ZooKeeperClient(quorum);
+            zooKeeperClient.connect();
+            ensurePilotPathExists();
 
             // Set up watcher for the dry-run directory in ZooKeeper
             zooKeeperClient.watchChildren(PILOT_PATH, (event) -> {
@@ -95,6 +183,18 @@ public class ThreadManager {
                     future.cancel(true);
                 }
             }
+        }
+    }
+
+    private static void ensurePilotPathExists() {
+        try {
+            if (zooKeeperClient != null && !zooKeeperClient.exists(PILOT_PATH)) {
+                zooKeeperClient.createRecursive(PILOT_PATH);
+                dryRunLog("Created PILOT_PATH: " + PILOT_PATH);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to create PILOT_PATH: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -212,7 +312,7 @@ public class ThreadManager {
                 zkClient.create(nodePath);
 
                 dryRunLog("Initialized pilot ID system, allocated ID: 1");
-                return "1";
+                return nodePath;
             }
 
             // 读取当前最大值
@@ -235,7 +335,7 @@ public class ThreadManager {
             zkClient.create(nodePath);
 
             dryRunLog("Successfully allocated execution ID: " + newIdStr);
-            return newIdStr;
+            return nodePath;
 
         } catch (Exception e) {
             dryRunLog("Error generating execution ID from ZooKeeper: " + e.getMessage());

@@ -267,6 +267,7 @@ public class State {
         } else {
             return clone(originalField);
         }
+
     }
 
 
@@ -617,12 +618,13 @@ public class State {
             MinMaxPriorityQueue<E> newQueue = (MinMaxPriorityQueue<E>) MinMaxPriorityQueue.create();
             newQueue.addAll(mmQueue);
             return newQueue;
-        } else if (original instanceof EvictingQueue) {
-            EvictingQueue<E> evictingQueue = (EvictingQueue<E>) original;
-            EvictingQueue<E> newQueue = EvictingQueue.create(evictingQueue.remainingCapacity() + evictingQueue.size());
-            newQueue.addAll(evictingQueue);
-            return newQueue;
         }
+//        else if (original instanceof EvictingQueue) {
+//            EvictingQueue<E> evictingQueue = (EvictingQueue<E>) original;
+//            EvictingQueue<E> newQueue = EvictingQueue.create(evictingQueue.remainingCapacity() + evictingQueue.size());
+//            newQueue.addAll(evictingQueue);
+//            return newQueue;
+//        }
 
         if (original instanceof PriorityQueue) {
             return new PriorityQueue<>((PriorityQueue<E>) original);
