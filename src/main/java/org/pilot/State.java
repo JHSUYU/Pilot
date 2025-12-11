@@ -361,9 +361,11 @@ public class State {
             return (T) cloneList((List<?>) obj);
         } else if (obj instanceof Thread) {
             return (T) cloneThread((Thread) obj);
-        } else if (obj instanceof FileChannel){
-            return (T)IOManager.handleFileChannel((FileChannel) obj);
-        } else if (obj instanceof FileOutputStream){
+        }
+//        else if (obj instanceof FileChannel){
+//            return (T)IOManager.handleFileChannel((FileChannel) obj);
+//        }
+        else if (obj instanceof FileOutputStream){
             return (T)IOManager.handleFileOutputStream((FileOutputStream) obj);
         }
 //        else if(obj needs workaround) {

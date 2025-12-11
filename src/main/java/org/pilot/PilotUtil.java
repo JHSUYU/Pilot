@@ -65,7 +65,7 @@ public class PilotUtil {
     public static final String PILOT_ID_KEY = "pilot_id";
     public static final String FAST_FORWARD_KEY = "is_fast_forward";
 
-    public static final String TRACER_ID = "pilot-execution";
+    public static final String TRACER_ID = "experiment-tracer";
 
     public static final String IS_SHADOW_THREAD_KEY = "is_shadow_thread";
 
@@ -167,6 +167,7 @@ public class PilotUtil {
             return false;
         }
     }
+
 
     public static Scope getPilotContext(Context ctx, int pilotID) {
         Baggage dryRunBaggage = Baggage.builder().put(PILOT_ID_KEY, pilotID + "").build();
@@ -635,8 +636,8 @@ public class PilotUtil {
     }
 
     public static Context start(Runnable entryPoint) {
+        TraceRecorder.initializeOpenTelemetry();
         String nodePath = generatePilotIdFromZooKeeper();
-
         //LOG.info(TraceRecorder.pilotStartingTraceId);
         LOG.info("Starting pilot with node path: " + nodePath);
         int pilotID = Integer.parseInt(nodePath.substring(nodePath.lastIndexOf('/') + 1));
@@ -657,7 +658,7 @@ public class PilotUtil {
                 TraceFlags.getSampled(),
                 TraceState.getDefault()
         );
-        pilotContext = Context.current().with(Span.wrap(remoteSpanContext));
+        pilotContext = pilotContext.with(Span.wrap(remoteSpanContext));
 
         if(entryPoint instanceof Thread){
             try(Scope scope = pilotContext.makeCurrent()){
@@ -718,7 +719,7 @@ public class PilotUtil {
         return pilotContext;
     }
 
-    private static String getHostIdentifier() {
+    public static String getHostIdentifier() {
         try {
             // 方案1：使用 IP 地址
             java.net.InetAddress localHost = java.net.InetAddress.getLocalHost();
@@ -886,6 +887,7 @@ public class PilotUtil {
                 .startSpan();
         Context context = Context.root();
         context = context.with(span);
+        TraceRecorder.recordSpanRelation(pilotTraceId, spanID, span.getSpanContext().getSpanId(), "HTTP");
         return context;
     }
 

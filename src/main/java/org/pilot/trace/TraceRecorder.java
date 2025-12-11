@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.pilot.Constants.*;
+import static org.pilot.PilotUtil.getHostIdentifier;
 
 /**
  * Records trace relationships and context propagation for analysis
@@ -392,9 +393,35 @@ public class TraceRecorder {
                                           String childSpanId, String childMethod) {
 
 
-        if(traceId.equals(normalTraceId) || traceId.equals(pilotTraceId)){
+        if(traceId.equals(pilotTraceId)){
             record(String.format("%s|SPAN_RELATION|%s|%s|%s|%d\n",
                     traceId, parentSpanId, childSpanId, childMethod, System.currentTimeMillis()));
+        }
+    }
+
+
+    public static void recordSpanRelationForPilotExecution(String traceId, String parentSpanId,
+                                                           String childSpanId, String childMethod) {
+
+        if(traceId.equals(pilotTraceId)){
+            // 获取线程信息
+            Thread currentThread = Thread.currentThread();
+            long threadId = currentThread.getId();
+            String threadName = currentThread.getName();
+
+            // 获取进程/主机信息
+            String hostIdentifier = getHostIdentifier();
+
+
+            record(String.format("%s|SPAN_RELATION|%s|%s|%s|%s|%s|%d|%d\n",
+                    traceId,
+                    parentSpanId,
+                    childSpanId,
+                    childMethod,
+                    hostIdentifier,      // 主机名
+                    threadName,          // 线程名
+                    threadId,            // 线程 ID
+                    System.currentTimeMillis()));
         }
     }
 
