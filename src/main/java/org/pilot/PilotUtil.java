@@ -887,7 +887,7 @@ public class PilotUtil {
                 .startSpan();
         Context context = Context.root();
         context = context.with(span);
-        TraceRecorder.recordSpanRelation(pilotTraceId, spanID, span.getSpanContext().getSpanId(), "HTTP");
+        TraceRecorder.recordSpanRelationForPilotExecution(pilotTraceId, spanID, span.getSpanContext().getSpanId(), "HTTPServletRequest");
         return context;
     }
 
