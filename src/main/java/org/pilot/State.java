@@ -293,7 +293,7 @@ public class State {
             return true;
         }
 
-        if(obj.getClass().getName().contains("org.apache.solr.update.SolrIndexWriter")){
+        if(obj.getClass().getName().contains("org.apache.solr.update.SolrIndexWriter") || obj.getClass().getName().contains("org.apache.lucene.index.FilterDirectoryReader")){
             return true;
         }
         return false;
